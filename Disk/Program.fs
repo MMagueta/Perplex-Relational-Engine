@@ -1,9 +1,8 @@
 ﻿module SolDB.Pager.PhysicalStorage
 
 open System
-open System.Data.SqlTypes
+open System.Runtime.InteropServices
 open System.IO
-open System.Text.Json.Serialization
 open SolQL
 open SolQL.AST
 
@@ -72,8 +71,22 @@ let flush (page: Page) =
     | PageSlot.Filled(_, true) -> failwith "Page clean"
     | _ -> failwith "Page empty"
 
+module BTreeCreate =
+    [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
+    extern IntPtr CreateBTree(int level)
+    let Invoke = CreateBTree
+module BTreeInsert =
+    [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
+    extern void insert(IntPtr tree, int value)
+    let Invoke = insert
+module BTreeSearch =
+    [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
+    extern int* search(IntPtr tree, int value)
+    let Invoke = search
+
 [<EntryPoint>]
 let main _ =
+    
     let row =
         Map.empty
         |> Map.add "id" (AST.ELiteral.LUniqueIdentifier(System.Guid.NewGuid()))
@@ -93,4 +106,20 @@ let main _ =
 
     flush page
     
+
+    
+    let tree: IntPtr = BTreeCreate.Invoke(3)
+    BTreeInsert.Invoke(tree, 1)
+    BTreeInsert.Invoke(tree, 2)
+    BTreeInsert.Invoke(tree, 3)
+    BTreeInsert.Invoke(tree, 4)
+    BTreeInsert.Invoke(tree, 5)
+    BTreeInsert.Invoke(tree, 6)
+    BTreeInsert.Invoke(tree, 7)
+    
+    let pointer = BTreeSearch.Invoke(tree, 3)
+    NativeInterop.NativePtr.get pointer 0
+    |> printfn "%A"
+    
+
     0
