@@ -29,42 +29,60 @@ let contextSchema: Schema =
     |> Map.add
         "user"
         (Map.empty
-         |> Map.add "name" (AST.Types.VariableCharacters 128)
+         |> Map.add "name" (AST.Types.VariableCharacters 8)
          |> Map.add "id" AST.Types.UniqueIdentifier
          |> Map.add "age" AST.Types.Integer32)
 
-(*
-let store (path: string) =
-    use stream = new IO.FileStream(path, IO.FileMode.Append)
-    use binaryStream = new IO.BinaryWriter(stream)
-    let test = "Hello World!" |> Text.Encoding.ASCII.GetBytes
-    binaryStream.Write(test)
-    
-let load (path: string) =
-    use stream = new IO.FileStream(path, IO.FileMode.Open)
-    use binaryStream = new IO.BinaryReader(stream)
-    binaryStream.ReadBytes PAGE_SIZE 
-    |> Text.Encoding.ASCII.GetString
-*)
 
 /// For now, no validation on what is provided
 /// In the future, check the sizes with the schema
 /// Example: VARCHAR(128) -> received "abc", fill a array[128] with "abc" + blanks
-let serialize (row: Map<string, AST.ELiteral>) =
+let serialize (schema: Schema) (entity: string) (row: Map<string, AST.ELiteral>) =
     Map.map
-        (fun _ ->
+        (fun nameAttr ->
             function
             | ELiteral.LInteger value -> BitConverter.GetBytes value
             | ELiteral.LUniqueIdentifier value -> value.ToString() |> Seq.map BitConverter.GetBytes |> Array.concat
-            | ELiteral.LVarChar value -> value |> Seq.map BitConverter.GetBytes |> Array.concat
+            | ELiteral.LVarChar value ->
+                Map.tryFind entity schema
+                |> fun x -> printfn "1: %A" x; x
+                |> Option.bind (fun table -> Map.tryFind nameAttr table)
+                |> fun x -> printfn "2: %A" x; x
+                |> Option.bind (function
+                    | AST.Types.VariableCharacters size ->
+                        let length = value.Length |> int64
+
+                        if length <= size then
+                            Array.append
+                                (value.ToCharArray())
+                                [| for _ in 1L .. (size - length) do
+                                       '\000' |]
+                            |> Seq.map BitConverter.GetBytes
+                            |> Array.concat
+                            |> Some
+                        else None
+                            //failwith "Value size is greater than the assigned to the field"
+                    | _ -> //failwith "Type mismatch"
+                        None)
+                |> fun x -> printfn "3: %A" x; x
+                |> Option.defaultValue [||]
             | ELiteral.LFixChar value -> value |> Seq.map BitConverter.GetBytes |> Array.concat)
         row
-
+(*
+let readBlock (offset: int) (size: int) (path: string) =
+    use stream = new IO.FileStream(path, IO.FileMode.Open)
+    do stream.Seek(offset, SeekOrigin.Begin)
+    use binaryStream = new IO.BinaryReader(stream)
+    binaryStream.ReadBytes PAGE_SIZE 
+    |> Seq.map BitConverter.ToChar
+*)
 let flush (page: Page) =
     match page.Slot with
     | PageSlot.Filled(offset, false) ->
         let path: string = __SOURCE_DIRECTORY__ + "/../" + page.File
-        use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
+        try IO.File.Delete path
+        with _ -> ()
+        use stream = new IO.FileStream(path, IO.FileMode.Create)
         use binaryStream = new IO.BinaryWriter(stream)
         let _ = binaryStream.Seek(offset * page.Size, SeekOrigin.Begin)
         binaryStream.Write(page.Page)
@@ -74,40 +92,58 @@ let flush (page: Page) =
 module BTreeCreate =
     [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
     extern IntPtr CreateBTree(int level)
+
     let Invoke = CreateBTree
+
 module BTreeInsert =
     [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
     extern void insert(IntPtr tree, int value)
+
     let Invoke = insert
+
 module BTreeSearch =
     [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
     extern int* search(IntPtr tree, int value)
+
     let Invoke = search
 
 [<EntryPoint>]
 let main _ =
-    
-    let row =
+
+    let createSampleRow (entity: string) (name: string) (age: int) =
         Map.empty
-        |> Map.add "id" (AST.ELiteral.LUniqueIdentifier(System.Guid.NewGuid()))
-        |> Map.add "name" (AST.ELiteral.LVarChar "Balderic")
-        |> Map.add "age" (AST.ELiteral.LInteger 23)
-        |> serialize
+        //|> Map.add "id" (AST.ELiteral.LUniqueIdentifier(System.Guid.NewGuid()))
+        |> Map.add "name" (AST.ELiteral.LVarChar name)
+        //|> Map.add "age" (AST.ELiteral.LInteger age)
+        |> serialize contextSchema entity
         |> Map.toArray
         |> Array.sortBy fst
         |> Array.map snd
         |> Array.concat
 
-    let page =
-        { Page = row
-          File = "Test.db"
-          Slot = PageSlot.Filled(0, false)
-          Size = row.Length }
+    // printfn "%A" ((createSampleRow "Volferic  " 34).Length)
 
-    flush page
-    
+    let pages =
+        [ { Page = createSampleRow "user" "Balderic" 23
+            File = "Test.db"
+            Slot = PageSlot.Filled(0, false)
+            Size = 20 }
+          { Page = createSampleRow "user" "Aleric" 17
+            File = "Test.db"
+            Slot = PageSlot.Filled(1, false)
+            Size = 20 }
+          { Page = createSampleRow "user" "Bolemeric" 31
+            File = "Test.db"
+            Slot = PageSlot.Filled(2, false)
+            Size = 20 }
+          { Page = createSampleRow "user" "Volferic" 34
+            File = "Test.db"
+            Slot = PageSlot.Filled(3, false)
+            Size = 20 } ]
 
-    
+    pages |> Seq.iter flush
+
+    (*
     let tree: IntPtr = BTreeCreate.Invoke(3)
     BTreeInsert.Invoke(tree, 1)
     BTreeInsert.Invoke(tree, 2)
@@ -121,5 +157,5 @@ let main _ =
     NativeInterop.NativePtr.get pointer 0
     |> printfn "%A"
     
-
+    *)
     0
