@@ -1,2 +1,5 @@
 **/bin
 **/obj
+**/*.so
+**/*.db
+.DS_Store
