@@ -2,7 +2,7 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Disk", "Disk\Disk.fsproj", "{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SolQL", "SolQL\SolQL.fsproj", "{DAE3D46B-96C7-4F1E-887E-789B7C4A0D3B}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Language", "Language\Language.fsproj", "{82349713-2B19-415D-BC08-4E5F0180D299}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,9 +14,9 @@ Global
 		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DAE3D46B-96C7-4F1E-887E-789B7C4A0D3B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DAE3D46B-96C7-4F1E-887E-789B7C4A0D3B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DAE3D46B-96C7-4F1E-887E-789B7C4A0D3B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DAE3D46B-96C7-4F1E-887E-789B7C4A0D3B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{82349713-2B19-415D-BC08-4E5F0180D299}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{82349713-2B19-415D-BC08-4E5F0180D299}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{82349713-2B19-415D-BC08-4E5F0180D299}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{82349713-2B19-415D-BC08-4E5F0180D299}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

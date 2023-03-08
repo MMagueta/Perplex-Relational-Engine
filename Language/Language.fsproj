@@ -10,4 +10,8 @@
       <Compile Include="AST.fs" />
     </ItemGroup>
 
+    <ItemGroup>
+      <PackageReference Update="FSharp.Core" Version="7.0.300-beta.23114.3" />
+    </ItemGroup>
+
 </Project>

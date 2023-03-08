@@ -1,10 +1,10 @@
-﻿module SolDB.Pager.PhysicalStorage
+﻿module ExpressDB.Pager.PhysicalStorage
 
 open System
 open System.Runtime.InteropServices
 open System.IO
-open SolQL
-open SolQL.AST
+open Language
+open Language.AST
 
 type Schema = Map<Name, Table>
 and Name = string

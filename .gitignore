@@ -3,3 +3,4 @@
 **/*.so
 **/*.db
 .DS_Store
+.fake
