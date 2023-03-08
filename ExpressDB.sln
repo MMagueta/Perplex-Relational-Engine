@@ -1,22 +1,18 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Disk", "Disk\Disk.fsproj", "{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}"
+#
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Language", "src\Language\Language.fsproj", "{DD8A8A59-86D1-4450-BCA6-1165D7A27751}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Language", "Language\Language.fsproj", "{82349713-2B19-415D-BC08-4E5F0180D299}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Disk", "src\Disk\Disk.fsproj", "{41C7C294-23CF-4DE0-8554-DD7D9DE66CF7}"
 EndProject
 Global
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|Any CPU = Debug|Any CPU
-		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{6FBECB6C-26BC-4FF1-85C8-B834AD1C98CE}.Release|Any CPU.Build.0 = Release|Any CPU
-		{82349713-2B19-415D-BC08-4E5F0180D299}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{82349713-2B19-415D-BC08-4E5F0180D299}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{82349713-2B19-415D-BC08-4E5F0180D299}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{82349713-2B19-415D-BC08-4E5F0180D299}.Release|Any CPU.Build.0 = Release|Any CPU
+		{41C7C294-23CF-4DE0-8554-DD7D9DE66CF7}.|Any CPU.ActiveCfg = |Any CPU
+		{41C7C294-23CF-4DE0-8554-DD7D9DE66CF7}.|Any CPU.Build.0 = |Any CPU
+		{DD8A8A59-86D1-4450-BCA6-1165D7A27751}.|Any CPU.ActiveCfg = |Any CPU
+		{DD8A8A59-86D1-4450-BCA6-1165D7A27751}.|Any CPU.Build.0 = |Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		|Any CPU = |Any CPU
 	EndGlobalSection
 EndGlobal
