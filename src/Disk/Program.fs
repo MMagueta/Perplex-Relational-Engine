@@ -16,7 +16,7 @@ type PageSlot =
 
 type Page =
     { Page: byte array
-      File: string
+      Entity: string
       Slot: PageSlot
       Size: int }
 
@@ -29,7 +29,7 @@ let contextSchema: Schema =
     |> Map.add
         "user"
         (Map.empty
-         |> Map.add "name" (AST.Types.VariableCharacters 8)
+         |> Map.add "name" (AST.Types.VariableCharacters 5)
          |> Map.add "id" AST.Types.UniqueIdentifier
          |> Map.add "age" AST.Types.Integer32)
 
@@ -38,36 +38,45 @@ let contextSchema: Schema =
 /// In the future, check the sizes with the schema
 /// Example: VARCHAR(128) -> received "abc", fill a array[128] with "abc" + blanks
 let serialize (schema: Schema) (entity: string) (row: Map<string, AST.ELiteral>) =
-    Map.map
+    let mutable warnings = []
+
+    (Map.map
         (fun nameAttr ->
             function
             | ELiteral.LInteger value -> BitConverter.GetBytes value
-            | ELiteral.LUniqueIdentifier value -> value.ToString() |> Seq.map BitConverter.GetBytes |> Array.concat
+            | ELiteral.LUniqueIdentifier value ->
+                value.ToString()
+                |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
+                |> Array.ofSeq
             | ELiteral.LVarChar value ->
                 Map.tryFind entity schema
-                |> fun x -> printfn "1: %A" x; x
                 |> Option.bind (fun table -> Map.tryFind nameAttr table)
-                |> fun x -> printfn "2: %A" x; x
                 |> Option.bind (function
-                    | AST.Types.VariableCharacters size ->
-                        let length = value.Length |> int64
+                    | AST.Types.VariableCharacters maxRowAllocatedSize ->
+                        let inputSize = value.Length |> int64
 
-                        if length <= size then
+                        if inputSize > maxRowAllocatedSize then
+                            warnings <-
+                                List.append
+                                    warnings
+                                    [ $"Value for field '{nameAttr}' was truncated. Maximum size is {maxRowAllocatedSize} but received {inputSize}." ]
+
+                        value.[0 .. (maxRowAllocatedSize |> int)]
+                        |> Seq.map (fun (x: char) -> (BitConverter.GetBytes x).[0])
+                        |> Array.ofSeq
+                        |> fun bytes ->
                             Array.append
-                                (value.ToCharArray())
-                                [| for _ in 1L .. (size - length) do
-                                       '\000' |]
-                            |> Seq.map BitConverter.GetBytes
-                            |> Array.concat
-                            |> Some
-                        else None
-                            //failwith "Value size is greater than the assigned to the field"
-                    | _ -> //failwith "Type mismatch"
-                        None)
-                |> fun x -> printfn "3: %A" x; x
-                |> Option.defaultValue [||]
-            | ELiteral.LFixChar value -> value |> Seq.map BitConverter.GetBytes |> Array.concat)
-        row
+                                bytes
+                                [| for _ in 1L .. (maxRowAllocatedSize - inputSize) do
+                                       0uy |]
+                        |> Some
+                    | _ -> None)
+                |> Option.defaultValue Array.empty
+            | ELiteral.LFixChar value -> value |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0]) |> Array.ofSeq)
+        row,
+     warnings)
+
+
 (*
 let readBlock (offset: int) (size: int) (path: string) =
     use stream = new IO.FileStream(path, IO.FileMode.Open)
@@ -79,16 +88,22 @@ let readBlock (offset: int) (size: int) (path: string) =
 let flush (page: Page) =
     match page.Slot with
     | PageSlot.Filled(offset, false) ->
-        let path: string = __SOURCE_DIRECTORY__ + "/../" + page.File
-        try IO.File.Delete path
-        with _ -> ()
-        use stream = new IO.FileStream(path, IO.FileMode.Create)
+        let path: string = __SOURCE_DIRECTORY__ + "/../" + page.Entity
+        use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
         use binaryStream = new IO.BinaryWriter(stream)
+        let _ = binaryStream.Seek(offset * page.Size, SeekOrigin.Begin)
+
+        let blank =
+            [| for _ in 0 .. (page.Size - 1) do
+                   0uy |]
+
+        binaryStream.Write(blank)
         let _ = binaryStream.Seek(offset * page.Size, SeekOrigin.Begin)
         binaryStream.Write(page.Page)
     | PageSlot.Filled(_, true) -> failwith "Page clean"
     | _ -> failwith "Page empty"
 
+(*
 module BTreeCreate =
     [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
     extern IntPtr CreateBTree(int level)
@@ -106,6 +121,7 @@ module BTreeSearch =
     extern int* search(IntPtr tree, int value)
 
     let Invoke = search
+*)
 
 [<EntryPoint>]
 let main _ =
@@ -116,6 +132,9 @@ let main _ =
         |> Map.add "name" (AST.ELiteral.LVarChar name)
         //|> Map.add "age" (AST.ELiteral.LInteger age)
         |> serialize contextSchema entity
+        |> fun (map, warnings) ->
+            Seq.iter (printfn "%A") warnings
+            map
         |> Map.toArray
         |> Array.sortBy fst
         |> Array.map snd
@@ -125,19 +144,19 @@ let main _ =
 
     let pages =
         [ { Page = createSampleRow "user" "Balderic" 23
-            File = "Test.db"
+            Entity = "Test.db"
             Slot = PageSlot.Filled(0, false)
             Size = 20 }
           { Page = createSampleRow "user" "Aleric" 17
-            File = "Test.db"
+            Entity = "Test.db"
             Slot = PageSlot.Filled(1, false)
             Size = 20 }
           { Page = createSampleRow "user" "Bolemeric" 31
-            File = "Test.db"
+            Entity = "Test.db"
             Slot = PageSlot.Filled(2, false)
             Size = 20 }
           { Page = createSampleRow "user" "Volferic" 34
-            File = "Test.db"
+            Entity = "Test.db"
             Slot = PageSlot.Filled(3, false)
             Size = 20 } ]
 
