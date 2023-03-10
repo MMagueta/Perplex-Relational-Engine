@@ -13,7 +13,7 @@ module AST =
             | Types.Integer32 -> 4
             | Types.FixedCharacters n
             | Types.VariableCharacters n -> n
-            | Types.UniqueIdentifier -> 72
+            | Types.UniqueIdentifier -> 36
             
     type ELiteral =
         | LInteger of int
