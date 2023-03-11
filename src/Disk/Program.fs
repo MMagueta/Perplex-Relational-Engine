@@ -51,35 +51,28 @@ let blanks lowerBound upperBound =
 
 module Tuple =
 
+    let private convert (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
+        match elem, Map.tryFind name metadata.Attributes with
+        | ELiteral.LInteger value, Some { Position = position; Type' = _ } ->
+            (position, BitConverter.GetBytes value)
+        | ELiteral.LUniqueIdentifier value, Some { Position = position; Type' = _ } ->
+            let serializedGuid =
+                value.ToString()
+                |> Array.ofSeq
+                |> Array.collect (BitConverter.GetBytes >> Array.take 1) in
+            (position, serializedGuid)
+        | ELiteral.LVarChar value,
+          Some { Position = position
+                 Type' = Types.VariableCharacters storageSize } ->
+            if value.Length > storageSize
+            then Log.Logger.ForContext("ExecutionType", "Serialization").ForContext("Identifier", System.Guid.NewGuid()).Warning("Value for field '{a}' was truncated. Maximum size is {b} but received {c}.", name, storageSize, value.Length)
+            value.[0 .. (storageSize)]
+            |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
+            |> fun bytes -> Seq.append bytes (blanks 1 (storageSize - value.Length))
+            |> fun bytes -> (position, Array.ofSeq bytes)
+        | _ -> failwith "Not implemented"
+
     let serialize (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>) : Result<byte array, exn> =
-        let convert (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
-            match elem, Map.tryFind name metadata.Attributes with
-            | ELiteral.LInteger value, Some { Position = position; Type' = _ } ->
-                (position, BitConverter.GetBytes value)
-            | ELiteral.LUniqueIdentifier value, Some { Position = position; Type' = _ } ->
-                let serializedGuid =
-                    value.ToString()
-                    |> Array.ofSeq
-                    |> Array.collect (BitConverter.GetBytes >> Array.take 1) in
-
-                (position, serializedGuid)
-            | ELiteral.LVarChar value,
-              Some { Position = position
-                     Type' = Types.VariableCharacters storageSize } ->
-                if value.Length > storageSize then
-                    Log.Logger.ForContext("ExecutionType", "Serialization").ForContext("Identifier", Guid.NewGuid()).Warning(
-                        "Value for field '{name}' was truncated. Maximum size is {storageSize} but received {length}.",
-                        name,
-                        storageSize,
-                        value.Length
-                    )
-
-                value.[0 .. (storageSize)]
-                |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
-                |> fun bytes -> Seq.append bytes (blanks 1 (storageSize - value.Length))
-                |> fun bytes -> (position, Array.ofSeq bytes)
-            | _ -> failwith "Not implemented"
-
         match Map.tryFind entity schema with
         | Some(Table table) ->
             Map.map (convert table) tuple
@@ -150,7 +143,7 @@ let main _ =
                     |> Map.add
                         "email"
                         ({ Position = 3
-                           Type' = (AST.Types.VariableCharacters 20) }) })
+                           Type' = (AST.Types.VariableCharacters 10) }) })
 
     let createSampleRow (entity: string) (name: string) (age: int) (email: string) =
         Map.empty
