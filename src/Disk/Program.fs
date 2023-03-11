@@ -1,50 +1,57 @@
 ﻿module ExpressDB.Pager.PhysicalStorage
 
 open System
-open System.Runtime.InteropServices
 open System.IO
 open Language
 open Language.AST
 
-type Schema = Map<Name, Table>
+type Schema = Map<Name, Entity>
 and Name = string
-and Table = Map<Name, AST.Types>
 
 [<RequireQualifiedAccess>]
 module Schema =
-    let TableSizes (s: Schema) =
-        Map.map
-            (fun (k: Name) (table: Table) -> Map.fold (fun acc k (v: AST.Types) -> acc + (v.ByteSize |> int)) 0 table)
-            s
+    let TableByteSize ((Table table): Entity) =
+        table.Attributes
+        |> Map.fold (fun acc k { Position = _; Type' = value} -> acc + value.ByteSize ) 0
 
-type PageSlot =
-    | Filled of StartingOffset: int * ``SyncedOnDisk?``: bool
-    | Empty of StartingOffset: int
+type PageState =
+    | Filled
+    | Empty
+
+type PageSlot = 
+    { Content: byte array
+      State: PageState
+      Size: int
+      Position: int }
 
 type Page =
-    { Page: byte array
-      Entity: string
-      Slot: PageSlot }
+    { Content: PageSlot array
+      Entity: Name }
 
-[<Literal>]
-let PAGE_SIZE = 4096
+[<RequireQualifiedAccessAttribute>]
+module ExpressDBError =
+    exception Serialization of string
 
-/// Hardcoded, this has to come from an actual storage on open()
-let contextSchema: Schema =
-    Map.empty
-    |> Map.add
-        "user"
-        (Map.empty
-         |> Map.add "name" (AST.Types.VariableCharacters 10)
-         |> Map.add "id" AST.Types.UniqueIdentifier
-         |> Map.add "age" AST.Types.Integer32
-         |> Map.add "email" (AST.Types.VariableCharacters 10))
+module Tuple =
+
+    let serialize (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>): Result<byte array, exn> =
+        let convert (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
+            match elem, Map.tryFind name metadata.Attributes with
+            | ELiteral.LInteger value, Some {Position = position; Type' = _} -> (position, BitConverter.GetBytes value)
+            | _ -> failwith "Not implemented"
+        
+        match Map.tryFind entity schema with
+        | Some (Table table) ->
+            Map.map (convert table) tuple
+            |> Map.toArray
+            |> Array.sortBy (snd >> fst)
+            |> Array.map (snd >> snd)
+            |> Array.concat
+            |> Ok
+        | None -> Error (ExpressDBError.Serialization "")
 
 
-/// For now, no validation on what is provided
-/// In the future, check the sizes with the schema
-/// Example: VARCHAR(128) -> received "abc", fill a array[128] with "abc" + blanks
-let serialize (schema: Schema) (entity: string) (row: Map<string, AST.ELiteral>) =
+    (*
     let mutable warnings = []
 
     (Map.map
@@ -82,70 +89,39 @@ let serialize (schema: Schema) (entity: string) (row: Map<string, AST.ELiteral>)
             | ELiteral.LFixChar value -> value |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0]) |> Array.ofSeq)
         row,
      warnings)
+    *)
 
-
-(*
-let readBlock (offset: int) (size: int) (path: string) =
-    use stream = new IO.FileStream(path, IO.FileMode.Open)
-    do stream.Seek(offset, SeekOrigin.Begin)
-    use binaryStream = new IO.BinaryReader(stream)
-    binaryStream.ReadBytes PAGE_SIZE 
-    |> Seq.map BitConverter.ToChar
-*)
-let write (page: Page) =
-    match page.Slot with
-    | PageSlot.Filled(offset, false) ->
-        let pageSize = (Schema.TableSizes contextSchema).[page.Entity]
-        let path: string = __SOURCE_DIRECTORY__ + "/../" + page.Entity
+    let write (page: Page) =
+        let path = __SOURCE_DIRECTORY__ + "/../" + page.Entity
         use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
         use binaryStream = new IO.BinaryWriter(stream)
-        let _ = binaryStream.Seek(offset * pageSize, SeekOrigin.Begin)
 
-        let blank =
-            [| for _ in 0 .. (pageSize - 1) do
-                   0uy |]
-
-        binaryStream.Write(blank)
-        let _ = binaryStream.Seek(offset * pageSize, SeekOrigin.Begin)
-        binaryStream.Write(page.Page)
-    | PageSlot.Filled(_, true) -> failwith "Page clean"
-    | _ -> failwith "Page empty"
-
-let retrieve (page: Page) =
-    let mutable bytes = [| |]
-    match page.Slot with
-    | PageSlot.Empty(offset)
-    | PageSlot.Filled(offset, _) ->
-        let pageSize = (Schema.TableSizes contextSchema).[page.Entity]
-        let path: string = __SOURCE_DIRECTORY__ + "/../" + page.Entity
-        use stream = new IO.FileStream(path, IO.FileMode.Open)
-        let _ = stream.Seek(offset * pageSize |> int64, SeekOrigin.Begin)
-        bytes <- [| for _ in 0..(pageSize) do 0uy |]
-        let _ = stream.Read(bytes, 0, pageSize)
-        {page with Page = bytes}
-
-(*
-module BTreeCreate =
-    [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
-    extern IntPtr CreateBTree(int level)
-
-    let Invoke = CreateBTree
-
-module BTreeInsert =
-    [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
-    extern void insert(IntPtr tree, int value)
-
-    let Invoke = insert
-
-module BTreeSearch =
-    [<DllImport(__SOURCE_DIRECTORY__ + "/Tree.so")>]
-    extern int* search(IntPtr tree, int value)
-
-    let Invoke = search
-*)
+        let syncByState { Content = content; State = pageState; Size = slotSize; Position = position } =
+            match pageState with
+            | PageState.Filled ->
+                let offset = position * slotSize
+                let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
+                let blanks = [| for _ in 0 .. (slotSize - 1) do 0uy |]
+                binaryStream.Write(blanks)
+                let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
+                binaryStream.Write(content)
+            | PageState.Empty -> ()
+        
+        page.Content
+        |> Array.iter (syncByState)
+        
 
 [<EntryPoint>]
 let main _ =
+
+    /// Hardcoded, this has to come from an actual storage on open()
+    let contextSchema: Schema =
+        Map.empty
+        |> Map.add "user" (Entity.Table { Name = "user"; Attributes = Map.empty 
+                                                                            |> Map.add "name" ({Position = 0; Type' = (AST.Types.VariableCharacters 10) } : Kind.FieldMetadata)
+                                                                            |> Map.add "id" ({Position = 1; Type' = AST.Types.UniqueIdentifier })
+                                                                            |> Map.add "age" ({Position = 2; Type' = AST.Types.Integer32 })
+                                                                            |> Map.add "email" ({Position = 3; Type' = (AST.Types.VariableCharacters 10) }) })
 
     let createSampleRow (entity: string) (name: string) (age: int) (email: string) =
         Map.empty
@@ -153,53 +129,7 @@ let main _ =
         |> Map.add "name" (AST.ELiteral.LVarChar name)
         |> Map.add "age" (AST.ELiteral.LInteger age)
         |> Map.add "email" (AST.ELiteral.LVarChar email)
-        |> serialize contextSchema entity
-        |> fun (map, warnings) ->
-            Seq.iter (printfn "%A") warnings
-            map
-        |> Map.toArray
-        |> Array.sortBy fst
-        |> Array.map snd
-        |> Array.concat
+        |> Tuple.serialize contextSchema "user"
 
-    // printfn "%A" ((createSampleRow "Volferic  " 34).Length)
 
-    let pages =
-        [ { Page = createSampleRow "user" "Balderic" 23 "balderic@express.com"
-            Entity = "user"
-            Slot = PageSlot.Filled(0, false) }
-          { Page = createSampleRow "user" "Aleric" 17 "aleric@express.com"
-            Entity = "user"
-            Slot = PageSlot.Filled(1, false) }
-          { Page = createSampleRow "user" "Bolemeric" 31 "bolemeric@express.com"
-            Entity = "user"
-            Slot = PageSlot.Filled(2, false) }
-          { Page = createSampleRow "user" "Volferic" 34 "volferic@express.com"
-            Entity = "user"
-            Slot = PageSlot.Filled(3, false) } ]
-
-    pages |> Seq.iter write
-
-    { Page = [||]
-      Entity = "user"
-      Slot = PageSlot.Empty(0) }
-    |> retrieve
-    |> fun p -> System.Text.Encoding.UTF8.GetString p.Page
-    |> printfn "%A"
-
-    (*
-    let tree: IntPtr = BTreeCreate.Invoke(3)
-    BTreeInsert.Invoke(tree, 1)
-    BTreeInsert.Invoke(tree, 2)
-    BTreeInsert.Invoke(tree, 3)
-    BTreeInsert.Invoke(tree, 4)
-    BTreeInsert.Invoke(tree, 5)
-    BTreeInsert.Invoke(tree, 6)
-    BTreeInsert.Invoke(tree, 7)
-    
-    let pointer = BTreeSearch.Invoke(tree, 3)
-    NativeInterop.NativePtr.get pointer 0
-    |> printfn "%A"
-    
-    *)
     0

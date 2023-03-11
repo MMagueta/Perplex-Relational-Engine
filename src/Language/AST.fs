@@ -5,15 +5,24 @@ module AST =
     [<RequireQualifiedAccess>]
     type Types =
         | Integer32
-        | FixedCharacters of int64
-        | VariableCharacters of int64
+        | FixedCharacters of int
+        | VariableCharacters of int
         | UniqueIdentifier
-        member this.ByteSize: int64 =
+        member this.ByteSize =
             match this with
             | Types.Integer32 -> 4
             | Types.FixedCharacters n
             | Types.VariableCharacters n -> n
             | Types.UniqueIdentifier -> 36
+
+    module Kind =
+        type FieldMetadata =
+            { Position: int
+              Type': Types }
+        type Table = { Name: string; Attributes: Map<string, FieldMetadata> }
+
+    type Entity =
+        | Table of Kind.Table
             
     type ELiteral =
         | LInteger of int

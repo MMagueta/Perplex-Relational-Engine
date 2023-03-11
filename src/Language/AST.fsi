@@ -4,11 +4,20 @@ module AST =
     [<RequireQualifiedAccess>]
     type Types =
         | Integer32
-        | FixedCharacters of int64
-        | VariableCharacters of int64
+        | FixedCharacters of int
+        | VariableCharacters of int
         | UniqueIdentifier
 
-        member ByteSize: int64
+        member ByteSize: int
+
+    module Kind =
+        type FieldMetadata =
+            { Position: int
+              Type': Types }
+        type Table = { Name: string; Attributes: Map<string, FieldMetadata> }
+
+    type Entity =
+        | Table of Kind.Table
 
     type ELiteral =
         | LInteger of int
