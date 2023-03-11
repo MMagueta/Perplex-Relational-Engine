@@ -33,12 +33,31 @@ module ExpressDBError =
     exception Serialization of string
 
 module Tuple =
+    let blanks lowerBound upperBound =
+        seq {
+            for _ in lowerBound..upperBound do
+                0uy
+        }
 
     let serialize (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>) : Result<byte array, exn> =
         let convert (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
             match elem, Map.tryFind name metadata.Attributes with
             | ELiteral.LInteger value, Some { Position = position; Type' = _ } ->
                 (position, BitConverter.GetBytes value)
+            | ELiteral.LUniqueIdentifier value, Some { Position = position; Type' = _ } ->
+                let serializedGuid =
+                    value.ToString()
+                    |> Array.ofSeq
+                    |> Array.collect (BitConverter.GetBytes >> Array.take 1) in
+
+                (position, serializedGuid)
+            | ELiteral.LVarChar value,
+              Some { Position = position
+                     Type' = Types.VariableCharacters storageSize } ->
+                value.[0 .. (storageSize)]
+                |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
+                |> fun bytes -> Seq.append bytes (blanks 1 (storageSize - value.Length))
+                |> fun bytes -> (position, Array.ofSeq bytes)
             | _ -> failwith "Not implemented"
 
         match Map.tryFind entity schema with
@@ -157,6 +176,21 @@ let main _ =
         |> Map.add "age" (AST.ELiteral.LInteger age)
         |> Map.add "email" (AST.ELiteral.LVarChar email)
         |> Tuple.serialize contextSchema "user"
+        |> function
+            | Ok ba -> ba
+            | Error ex -> failwith ex.Message
 
+    let pages =
+        let sample = createSampleRow "user" "Wisimar" 1688 "wisimar@email.vd"
+
+        let content =
+            { Content = sample
+              Position = 0
+              Size = Schema.TableByteSize contextSchema.["user"]
+              State = PageState.Filled }
+
+        { Entity = "user"
+          Content = [| content |] }
+        |> Tuple.write
 
     0
