@@ -1,6 +1,6 @@
 namespace Language
 
-module AST = 
+module AST =
 
     [<RequireQualifiedAccess>]
     type Types =
@@ -8,6 +8,7 @@ module AST =
         | FixedCharacters of int
         | VariableCharacters of int
         | UniqueIdentifier
+
         member this.ByteSize =
             match this with
             | Types.Integer32 -> 4
@@ -16,23 +17,23 @@ module AST =
             | Types.UniqueIdentifier -> 36
 
     module Kind =
-        type FieldMetadata =
-            { Position: int
-              Type': Types }
-        type Table = { Name: string; Attributes: Map<string, FieldMetadata> }
+        type FieldMetadata = { Position: int; Type': Types }
 
-    type Entity =
-        | Table of Kind.Table
-            
+        type Table =
+            { Name: string
+              Attributes: Map<string, FieldMetadata> }
+
+    type Entity = Table of Kind.Table
+
     type ELiteral =
         | LInteger of int
         | LVarChar of string
         | LFixChar of string
         | LUniqueIdentifier of System.Guid
-            
+
     [<RequireQualifiedAccess>]
-    type Expressions =
-        | Insert of Fields: InsertFieldInfo array
+    type Expressions = Insert of Fields: InsertFieldInfo array
+
     and InsertFieldInfo =
         { FieldName: string
           FieldType: Types

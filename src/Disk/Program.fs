@@ -12,13 +12,13 @@ and Name = string
 module Schema =
     let TableByteSize ((Table table): Entity) =
         table.Attributes
-        |> Map.fold (fun acc k { Position = _; Type' = value} -> acc + value.ByteSize ) 0
+        |> Map.fold (fun acc k { Position = _; Type' = value } -> acc + value.ByteSize) 0
 
 type PageState =
     | Filled
     | Empty
 
-type PageSlot = 
+type PageSlot =
     { Content: byte array
       State: PageState
       Size: int
@@ -34,21 +34,22 @@ module ExpressDBError =
 
 module Tuple =
 
-    let serialize (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>): Result<byte array, exn> =
+    let serialize (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>) : Result<byte array, exn> =
         let convert (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
             match elem, Map.tryFind name metadata.Attributes with
-            | ELiteral.LInteger value, Some {Position = position; Type' = _} -> (position, BitConverter.GetBytes value)
+            | ELiteral.LInteger value, Some { Position = position; Type' = _ } ->
+                (position, BitConverter.GetBytes value)
             | _ -> failwith "Not implemented"
-        
+
         match Map.tryFind entity schema with
-        | Some (Table table) ->
+        | Some(Table table) ->
             Map.map (convert table) tuple
             |> Map.toArray
             |> Array.sortBy (snd >> fst)
             |> Array.map (snd >> snd)
             |> Array.concat
             |> Ok
-        | None -> Error (ExpressDBError.Serialization "")
+        | None -> Error(ExpressDBError.Serialization "")
 
 
     (*
@@ -96,20 +97,28 @@ module Tuple =
         use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
         use binaryStream = new IO.BinaryWriter(stream)
 
-        let syncByState { Content = content; State = pageState; Size = slotSize; Position = position } =
+        let syncByState
+            { Content = content
+              State = pageState
+              Size = slotSize
+              Position = position }
+            =
             match pageState with
             | PageState.Filled ->
                 let offset = position * slotSize
                 let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
-                let blanks = [| for _ in 0 .. (slotSize - 1) do 0uy |]
+
+                let blanks =
+                    [| for _ in 0 .. (slotSize - 1) do
+                           0uy |]
+
                 binaryStream.Write(blanks)
                 let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
                 binaryStream.Write(content)
             | PageState.Empty -> ()
-        
-        page.Content
-        |> Array.iter (syncByState)
-        
+
+        page.Content |> Array.iter (syncByState)
+
 
 [<EntryPoint>]
 let main _ =
@@ -117,11 +126,29 @@ let main _ =
     /// Hardcoded, this has to come from an actual storage on open()
     let contextSchema: Schema =
         Map.empty
-        |> Map.add "user" (Entity.Table { Name = "user"; Attributes = Map.empty 
-                                                                            |> Map.add "name" ({Position = 0; Type' = (AST.Types.VariableCharacters 10) } : Kind.FieldMetadata)
-                                                                            |> Map.add "id" ({Position = 1; Type' = AST.Types.UniqueIdentifier })
-                                                                            |> Map.add "age" ({Position = 2; Type' = AST.Types.Integer32 })
-                                                                            |> Map.add "email" ({Position = 3; Type' = (AST.Types.VariableCharacters 10) }) })
+        |> Map.add
+            "user"
+            (Entity.Table
+                { Name = "user"
+                  Attributes =
+                    Map.empty
+                    |> Map.add
+                        "name"
+                        ({ Position = 0
+                           Type' = (AST.Types.VariableCharacters 10) }
+                        : Kind.FieldMetadata)
+                    |> Map.add
+                        "id"
+                        ({ Position = 1
+                           Type' = AST.Types.UniqueIdentifier })
+                    |> Map.add
+                        "age"
+                        ({ Position = 2
+                           Type' = AST.Types.Integer32 })
+                    |> Map.add
+                        "email"
+                        ({ Position = 3
+                           Type' = (AST.Types.VariableCharacters 10) }) })
 
     let createSampleRow (entity: string) (name: string) (age: int) (email: string) =
         Map.empty

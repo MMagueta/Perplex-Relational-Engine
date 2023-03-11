@@ -11,13 +11,13 @@ module AST =
         member ByteSize: int
 
     module Kind =
-        type FieldMetadata =
-            { Position: int
-              Type': Types }
-        type Table = { Name: string; Attributes: Map<string, FieldMetadata> }
+        type FieldMetadata = { Position: int; Type': Types }
 
-    type Entity =
-        | Table of Kind.Table
+        type Table =
+            { Name: string
+              Attributes: Map<string, FieldMetadata> }
+
+    type Entity = Table of Kind.Table
 
     type ELiteral =
         | LInteger of int
