@@ -1,5 +1,16 @@
 ﻿module ExpressDB.Pager.PhysicalStorage
 
+open Serilog
+
+let _ =
+    Log.Logger <-
+        LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .Enrich.FromLogContext()
+            .WriteTo.ColoredConsole(outputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] [{ExecutionType}-{Identifier}] {Message:l}{NewLine}{Exception}")
+            .WriteTo.File(__SOURCE_DIRECTORY__ + "/Logs", outputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] [{ExecutionType}-{Identifier}] {Message:l}{NewLine}{Exception}")
+            .CreateLogger()
+
 open System
 open System.IO
 open Language
@@ -32,12 +43,13 @@ type Page =
 module ExpressDBError =
     exception Serialization of string
 
+let blanks lowerBound upperBound =
+    seq {
+        for _ in lowerBound..upperBound do
+            0uy
+    }
+
 module Tuple =
-    let blanks lowerBound upperBound =
-        seq {
-            for _ in lowerBound..upperBound do
-                0uy
-        }
 
     let serialize (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>) : Result<byte array, exn> =
         let convert (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
@@ -54,6 +66,14 @@ module Tuple =
             | ELiteral.LVarChar value,
               Some { Position = position
                      Type' = Types.VariableCharacters storageSize } ->
+                if value.Length > storageSize then
+                    Log.Logger.ForContext("ExecutionType", "Serialization").ForContext("Identifier", Guid.NewGuid()).Warning(
+                        "Value for field '{name}' was truncated. Maximum size is {storageSize} but received {length}.",
+                        name,
+                        storageSize,
+                        value.Length
+                    )
+
                 value.[0 .. (storageSize)]
                 |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
                 |> fun bytes -> Seq.append bytes (blanks 1 (storageSize - value.Length))
@@ -70,47 +90,6 @@ module Tuple =
             |> Ok
         | None -> Error(ExpressDBError.Serialization "")
 
-
-    (*
-    let mutable warnings = []
-
-    (Map.map
-        (fun nameAttr ->
-            function
-            | ELiteral.LInteger value -> BitConverter.GetBytes value
-            | ELiteral.LUniqueIdentifier value ->
-                value.ToString()
-                |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
-                |> Array.ofSeq
-            | ELiteral.LVarChar value ->
-                Map.tryFind entity schema
-                |> Option.bind (fun table -> Map.tryFind nameAttr table)
-                |> Option.bind (function
-                    | AST.Types.VariableCharacters maxRowAllocatedSize ->
-                        let inputSize = value.Length |> int64
-
-                        if inputSize > maxRowAllocatedSize then
-                            warnings <-
-                                List.append
-                                    warnings
-                                    [ $"Value for field '{nameAttr}' was truncated. Maximum size is {maxRowAllocatedSize} but received {inputSize}." ]
-
-                        value.[0 .. (maxRowAllocatedSize |> int)]
-                        |> Seq.map (fun (x: char) -> (BitConverter.GetBytes x).[0])
-                        |> Array.ofSeq
-                        |> fun bytes ->
-                            Array.append
-                                bytes
-                                [| for _ in 1L .. (maxRowAllocatedSize - inputSize) do
-                                       0uy |]
-                        |> Some
-                    | _ -> None)
-                |> Option.defaultValue Array.empty
-            | ELiteral.LFixChar value -> value |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0]) |> Array.ofSeq)
-        row,
-     warnings)
-    *)
-
     let write (page: Page) =
         let path = __SOURCE_DIRECTORY__ + "/../" + page.Entity
         use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
@@ -126,18 +105,22 @@ module Tuple =
             | PageState.Filled ->
                 let offset = position * slotSize
                 let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
-
-                let blanks =
-                    [| for _ in 0 .. (slotSize - 1) do
-                           0uy |]
-
-                binaryStream.Write(blanks)
+                binaryStream.Write(blanks 0 (slotSize - 1) |> Array.ofSeq)
                 let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
                 binaryStream.Write(content)
             | PageState.Empty -> ()
 
         page.Content |> Array.iter (syncByState)
 
+
+    let read (schema: Schema) (page: Page) (position: int) =
+        let path = __SOURCE_DIRECTORY__ + "/../" + page.Entity
+        use stream = new IO.FileStream(path, IO.FileMode.Open)
+        use binaryStream = new IO.BinaryReader(stream)
+        let entityBlockSize = Schema.TableByteSize schema.[page.Entity]
+        let offset = position * entityBlockSize
+        let _ = stream.Seek(offset, SeekOrigin.Begin)
+        binaryStream.ReadBytes entityBlockSize
 
 [<EntryPoint>]
 let main _ =
@@ -167,7 +150,7 @@ let main _ =
                     |> Map.add
                         "email"
                         ({ Position = 3
-                           Type' = (AST.Types.VariableCharacters 10) }) })
+                           Type' = (AST.Types.VariableCharacters 20) }) })
 
     let createSampleRow (entity: string) (name: string) (age: int) (email: string) =
         Map.empty
@@ -179,18 +162,26 @@ let main _ =
         |> function
             | Ok ba -> ba
             | Error ex -> failwith ex.Message
+            
+    let content =
+        [| { Content = createSampleRow "user" "Wisimar" 1688 "wisimar@email.vd"
+             Position = 0
+             Size = Schema.TableByteSize contextSchema.["user"]
+             State = PageState.Filled };
+           { Content = createSampleRow "user" "Godigisel" 1664 "godigisel@email.vd"
+             Position = 1
+             Size = Schema.TableByteSize contextSchema.["user"]
+             State = PageState.Filled };
+           { Content = createSampleRow "user" "Gunderic" 1616 "gunderic@email.vd"
+             Position = 2
+             Size = Schema.TableByteSize contextSchema.["user"]
+             State = PageState.Filled } |]
+    { Entity = "user"
+      Content = content }
+    |> Tuple.write
 
-    let pages =
-        let sample = createSampleRow "user" "Wisimar" 1688 "wisimar@email.vd"
 
-        let content =
-            { Content = sample
-              Position = 0
-              Size = Schema.TableByteSize contextSchema.["user"]
-              State = PageState.Filled }
-
-        { Entity = "user"
-          Content = [| content |] }
-        |> Tuple.write
+    
+    
 
     0
