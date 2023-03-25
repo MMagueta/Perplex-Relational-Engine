@@ -26,7 +26,9 @@ module AST =
         | LUniqueIdentifier of System.Guid
 
     [<RequireQualifiedAccess>]
-    type Expressions = Insert of Fields: InsertFieldInfo array
+    type Expression =
+        | Insert of Name: string * Fields: InsertFieldInfo array
+        | CreateRelation of Name: string * Attributes: Map<string, Types>
 
     and InsertFieldInfo =
         { FieldName: string

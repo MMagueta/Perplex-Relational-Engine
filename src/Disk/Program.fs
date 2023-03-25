@@ -115,7 +115,7 @@ module Tuple =
         let _ = stream.Seek(offset, SeekOrigin.Begin)
         binaryStream.ReadBytes entityBlockSize
 
-[<EntryPoint>]
+// [<EntryPoint>]
 let main _ =
 
     /// Hardcoded, this has to come from an actual storage on open()
