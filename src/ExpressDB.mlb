@@ -1,4 +1,0 @@
-$(SML_LIB)/basis/basis.mlb
-Core/Dictionary.sml
-AST.sml
-Main.sml

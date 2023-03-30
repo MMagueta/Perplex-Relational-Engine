@@ -3,11 +3,12 @@
 pkgs.stdenv.mkDerivation {
   name = "ExpressDB";
 
-  src = ./src;
+  src = ./.;
 
   buildPhase = ''
     mkdir $out
     # ${mlton}/bin/mlton -default-ann 'allowFFI true' -export-header $src/ExpressDB.h -stop tc -output $src/ExpressDB $src/ExpressDB.mlb
+    pwd
     ${mlton}/bin/mlton -output $out/ExpressDB $src/ExpressDB.mlb
   '';
 
