@@ -1,8 +1,10 @@
 ﻿namespace ExpressDB.Executor
 
+open System
 open System.Diagnostics
 open System.IO
 open Serilog
+open System.IO.Compression
 
 module Xml =
     open System.IO
@@ -42,20 +44,66 @@ module Runner =
         let TableByteSize ((Table table): Entity) =
             table.Attributes
             |> Map.fold (fun acc _ { Position = _; Type' = value } -> acc + value.ByteSize) 0
+            
         let persist (schema: Schema) =
             let text =
                 Map.fold (fun acc name entity ->
-                    let xml = Xml.serialize<Entity> entity
-                    $"{acc}|{name}|{xml}"
-                    ) "" schema
-            System.IO.File.WriteAllText(__SOURCE_DIRECTORY__ + "/../schema.xml", text)
+                          let xml = Xml.serialize<Entity> entity
+                          $"{acc}|{name}|{xml}") "" schema
+            
+            // Switch this to FsConfig later
+            if Environment.GetEnvironmentVariable "SCHEMA_COMPRESSION" = "OFF" then
+                System.IO.File.WriteAllText(__SOURCE_DIRECTORY__ + "/../schema.xs", text)
+            else
+                use memoryStream = new MemoryStream()
+                use gzipStream = new GZipStream(memoryStream, CompressionLevel.Optimal)
+                let byteStream: byte array =
+                    text
+                    |> Array.ofSeq
+                    |> Array.collect (System.BitConverter.GetBytes >> Array.take 1)
+                gzipStream.Write(byteStream, 0, byteStream.Length);
+                let result = memoryStream.ToArray()
+                System.IO.File.WriteAllBytes(__SOURCE_DIRECTORY__ + "/../schema.xs", result)
+            
+            
         let loadFromDisk () =
-            try
-                let text = System.IO.File.ReadAllText(__SOURCE_DIRECTORY__ + "/../schema.xml")
-                let map = Map.ofArray (text.Split("|") |> Array.filter (function "" -> false | _ -> true) |> Array.chunkBySize 2 |> Array.map (fun xs -> (xs.[0], xs.[1])))
-                Map.map (fun (k: string) v -> Xml.deserialize<Entity>(v)) map
-            with :? System.IO.FileNotFoundException ->
-                Map.empty
+            if Environment.GetEnvironmentVariable "SCHEMA_COMPRESS" = "OFF" then
+                try
+                    let text = System.IO.File.ReadAllText(__SOURCE_DIRECTORY__ + "/../schema.xs")
+                    let map =
+                        Map.ofArray
+                          (text.Split("|")
+                           |> Array.filter (function "" -> false | _ -> true)
+                           |> Array.chunkBySize 2
+                           |> Array.map (fun xs -> (xs.[0], xs.[1])))
+                    Map.map (fun _ v -> Xml.deserialize<Entity>(v)) map
+                with :? System.IO.FileNotFoundException ->
+                    Map.empty
+                   | :? System.IndexOutOfRangeException | :? System.IO.InvalidDataException as ex ->
+                       if ex.Message = "The archive entry was compressed using an unsupported compression method." || ex.Message = "Index was outside the bounds of the array."
+                       then Log.Logger.ForContext("ExecutionType", "LoadingSchema").ForContext("Identifier", System.Guid.NewGuid()).Error("The schema is compressed. Consider changing the environment variable `SCHEMA_COMPRESS` to `ON`")
+                            failwith "The schema is compressed. Consider changing the environment variable `SCHEMA_COMPRESS` to `ON`"
+                       else let msg = "The schema data seems to be corrupted. If it is not GZip compressed and it was previously saved as so, consider going back to GZip; unless the data was uncarefully modified."
+                            Log.Logger.ForContext("ExecutionType", "LoadingSchema").ForContext("Identifier", System.Guid.NewGuid()).Error(msg)
+                            failwith msg
+            else
+                try
+                    let bytes = System.IO.File.ReadAllBytes(__SOURCE_DIRECTORY__ + "/../schema.xs")
+                    use memoryStream = new MemoryStream(bytes)
+                    use outStream = new MemoryStream()
+                    use decompressStream = new GZipStream(memoryStream, CompressionMode.Decompress)
+                    decompressStream.CopyTo(outStream)
+                    let map =
+                        Map.ofArray
+                          (System.Text.Encoding.UTF8.GetString(outStream.ToArray()).Split("|")
+                           |> Array.filter (function "" -> false | _ -> true)
+                           |> Array.chunkBySize 2
+                           |> Array.map (fun xs -> (xs.[0], xs.[1])))
+                    Map.map (fun _ v -> Xml.deserialize<Entity>(v)) map
+                with :? System.IO.FileNotFoundException ->
+                    Map.empty
+                    | :? System.IO.InvalidDataException -> printfn "HELP"; Map.empty
+                
     let createRow (relationName: string) (schema: Schema) =
         ExpressDB.Pager.PhysicalStorage.Tuple.serialize schema relationName
         >> function
