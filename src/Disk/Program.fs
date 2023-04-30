@@ -16,6 +16,9 @@ open System.IO
 open Language
 open Language.AST
 
+[<Literal>]
+let PAGE_SIZE = 50
+
 type Schema = Map<Name, Entity>
 and Name = string
 
@@ -35,9 +38,19 @@ type PageSlot =
       Size: int
       Position: int }
 
+type PageHeader =
+    { StartingPosition : int
+      EndingPosition : int }
+
 type Page =
     { Content: PageSlot array
-      Entity: Name }
+      Entity: Name
+      Header: PageHeader }
+    static member New(): Page =
+        { Content = [||]
+          Entity = "";
+          Header = { StartingPosition = 0
+                     EndingPosition = PAGE_SIZE } }
 
 [<RequireQualifiedAccessAttribute>]
 module ExpressDBError =
@@ -83,98 +96,27 @@ module Tuple =
             |> Ok
         | None -> Error(ExpressDBError.Serialization "")
 
-    let write (page: Page) =
-        let path = __SOURCE_DIRECTORY__ + "/../" + page.Entity
+    let write (position: int) (slotSize: int) (entity: string) (content: byte array) =
+        let path = __SOURCE_DIRECTORY__ + "/../" + entity
         use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
         use binaryStream = new IO.BinaryWriter(stream)
+        
+        Log.Logger.ForContext("ExecutionType", "Write").ForContext("Identifier", System.Guid.NewGuid()).Debug($"Position: {position}")
+        let offset = position * slotSize
+        let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
+        binaryStream.Write(blanks 0 (slotSize - 1) |> Array.ofSeq)
+        let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
+        binaryStream.Write(content)
 
-        let syncByState
-            { Content = content
-              State = pageState
-              Size = slotSize
-              Position = position }
-            =
-            match pageState with
-            | PageState.Filled ->
-                let offset = position * slotSize
-                let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
-                binaryStream.Write(blanks 0 (slotSize - 1) |> Array.ofSeq)
-                let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
-                binaryStream.Write(content)
-            | PageState.Empty -> ()
-
-        page.Content |> Array.iter (syncByState)
-
-
-    let read (schema: Schema) (page: Page) (position: int) =
-        let path = __SOURCE_DIRECTORY__ + "/../" + page.Entity
+    let loadPage (schema: Schema) (entityName: string) (page: Page) =
+        let path = __SOURCE_DIRECTORY__ + "/../" + entityName
         use stream = new IO.FileStream(path, IO.FileMode.Open)
         use binaryStream = new IO.BinaryReader(stream)
-        let entityBlockSize = Schema.TableByteSize schema.[page.Entity]
-        let offset = position * entityBlockSize
-        let _ = stream.Seek(offset, SeekOrigin.Begin)
-        binaryStream.ReadBytes entityBlockSize
+        let entityBlockSize = Schema.TableByteSize schema.[entityName]
+        let amountOfRows = System.Math.Floor (PAGE_SIZE / entityBlockSize |> decimal) |> int
+        let _ = stream.Seek(page.Header.StartingPosition, SeekOrigin.Begin)
+        binaryStream.ReadBytes amountOfRows
 
-// [<EntryPoint>]
-let main _ =
-
-    /// Hardcoded, this has to come from an actual storage on open()
-    let contextSchema: Schema =
-        Map.empty
-        |> Map.add
-            "user"
-            (Entity.Table
-                { Name = "user"
-                  Attributes =
-                    Map.empty
-                    |> Map.add
-                        "name"
-                        ({ Position = 0
-                           Type' = (AST.Types.VariableCharacters 10) }
-                        : Kind.FieldMetadata)
-                    |> Map.add
-                        "id"
-                        ({ Position = 1
-                           Type' = AST.Types.UniqueIdentifier })
-                    |> Map.add
-                        "age"
-                        ({ Position = 2
-                           Type' = AST.Types.Integer32 })
-                    |> Map.add
-                        "email"
-                        ({ Position = 3
-                           Type' = (AST.Types.VariableCharacters 10) }) })
-
-    let createSampleRow (entity: string) (name: string) (age: int) (email: string) =
-        Map.empty
-        |> Map.add "id" (AST.ELiteral.LUniqueIdentifier(System.Guid.NewGuid()))
-        |> Map.add "name" (AST.ELiteral.LVarChar name)
-        |> Map.add "age" (AST.ELiteral.LInteger age)
-        |> Map.add "email" (AST.ELiteral.LVarChar email)
-        |> Tuple.serialize contextSchema "user"
-        |> function
-            | Ok ba -> ba
-            | Error ex -> failwith ex.Message
-            
-    let content =
-        [| { Content = createSampleRow "user" "Wisimar" 1688 "wisimar@email.vd"
-             Position = 0
-             Size = Schema.TableByteSize contextSchema.["user"]
-             State = PageState.Filled };
-           { Content = createSampleRow "user" "Godigisel" 1664 "godigisel@email.vd"
-             Position = 1
-             Size = Schema.TableByteSize contextSchema.["user"]
-             State = PageState.Filled };
-           { Content = createSampleRow "user" "Gunderic" 1616 "gunderic@email.vd"
-             Position = 2
-             Size = Schema.TableByteSize contextSchema.["user"]
-             State = PageState.Filled } |]
-    { Entity = "user"
-      Content = content }
-    |> Tuple.write
-
-
-    
-    
-
-    0
+    let pageLifter (schema: Schema) (entityName: string): Page array =
+        [| for _ in 0..2 do Page.New() |]
+        // |> Array.

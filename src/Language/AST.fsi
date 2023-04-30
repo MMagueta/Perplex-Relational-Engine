@@ -15,10 +15,12 @@ module AST =
 
         type Table =
             { Name: string
+              RowCount: int
               Attributes: Map<string, FieldMetadata> }
 
-    type Entity = Table of Kind.Table
-
+    type Entity =
+        | Table of Kind.Table
+        
     type ELiteral =
         | LInteger of int
         | LVarChar of string
