@@ -1,0 +1,84 @@
+%{
+open Language
+%}
+
+// The start token becomes a parser function in the compiled code:
+%start start
+
+// Regular tokens
+%token <string> IDENTIFIER
+%token <int> LITERAL_INTEGER
+%token <string> LITERAL_STRING
+%token <string> TYPE'
+%token CREATE
+%token RELATION
+%token INSERT
+
+// Misc tokens
+%token EOF
+%token LEFT_LIM
+%token RIGHT_LIM
+
+// This is the type of the data produced by a successful reduction of the 'start'
+// symbol:
+%type < AST.Expression option > start
+
+%%
+
+// These are the rules of the grammar along with the F# code of the 
+// actions executed as rules are reduced.  
+
+
+start: File end { $1 }
+     | end      { None }
+
+File:
+	| Expression { Some $1 }
+
+Expression:
+	| CREATE RELATION IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM 
+	    { AST.Expression.CreateRelation ($3, Map.ofList $5) }
+	| INSERT IDENTIFIER LEFT_LIM ListValues RIGHT_LIM
+	    { AST.Expression.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: AST.InsertFieldInfo) $4 |> Array.ofList) }
+
+ListAttributes:
+  | { [] }
+  | Rev_Attributes { List.rev $1 }
+
+Rev_Attributes:
+  | IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM
+    { match $2 with
+      | "VARCHAR" -> [($1, AST.Types.VariableCharacters $4)] }
+  | IDENTIFIER TYPE' 
+    { match $2 with
+      | "INTEGER" -> [($1, AST.Types.Integer32)]
+      | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size." }
+  | Rev_Attributes IDENTIFIER TYPE' { ($2, match $3 with
+                                           | "INTEGER" -> AST.Types.Integer32
+                                           | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size.") :: $1 }
+  | Rev_Attributes IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM 
+    { ($2, match $3 with
+           | "VARCHAR" -> AST.Types.VariableCharacters $5) :: $1 }
+
+ListValues:
+  | { [] }
+  | Rev_Values { List.rev $1 }
+
+Rev_Values:
+  | IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM LITERAL_STRING
+    { match $2 with
+      | "VARCHAR" -> [($1, AST.Types.VariableCharacters $4, AST.ELiteral.LVarChar $6)] }
+  | IDENTIFIER TYPE' LITERAL_INTEGER
+    { match $2 with
+      | "INTEGER" -> [($1, AST.Types.Integer32, AST.ELiteral.LInteger $3)]
+      | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size." }
+  | Rev_Values IDENTIFIER TYPE' LITERAL_INTEGER
+    { ($2, (match $3 with
+            | "INTEGER" -> AST.Types.Integer32
+            | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size."), AST.ELiteral.LInteger $4) :: $1 }
+  | Rev_Values IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM LITERAL_STRING 
+    { ($2, (match $3 with
+            | "VARCHAR" -> AST.Types.VariableCharacters $5), AST.ELiteral.LVarChar $7) :: $1 }
+
+// Using F# keywords for nonterminal names is okay.
+end: EOF { None }
