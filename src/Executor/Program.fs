@@ -56,8 +56,8 @@ module Runner =
                 Map.map (fun (k: string) v -> Xml.deserialize<Entity>(v)) map
             with :? System.IO.FileNotFoundException ->
                 Map.empty
-    let createRow (relationName: string) (schema: Schema) =
-        ExpressDB.Pager.PhysicalStorage.Tuple.serialize schema relationName
+    let createRow (logger: ILogger) (relationName: string) (schema: Schema) =
+        ExpressDB.Pager.PhysicalStorage.Row.serialize logger schema relationName
         >> function
             | Ok ba -> ba
             | Error ex -> failwith ex.Message
@@ -82,15 +82,16 @@ module Runner =
                  State = ExpressDB.Pager.PhysicalStorage.PageState.Filled } |] }
         : ExpressDB.Pager.PhysicalStorage.Page
 
-    let execute (expression: Expression) (schema: Schema) =
+    let execute (logger: ILogger) (expression: Expression) (schema: Schema) =
         match expression with
         | Expression.Insert(relationName, fields) ->
             let (Table tableInfo) = schema.[relationName]
 
             fields
             |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
-            |> createRow relationName schema
-            |> ExpressDB.Pager.PhysicalStorage.Tuple.write
+            |> createRow logger relationName schema
+            |> ExpressDB.Pager.PhysicalStorage.Row.write
+                logger
                 tableInfo.RowCount
                 (Schema.TableByteSize schema.[relationName])
                 relationName

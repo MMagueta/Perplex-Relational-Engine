@@ -9,6 +9,8 @@
 
     <ItemGroup>
       <ProjectReference Include="..\Executor\Executor.fsproj" />
+      <ProjectReference Include="..\Configuration\Configuration.fsproj" />
+      <ProjectReference Include="..\Language\Language.fsproj" />
     </ItemGroup>
 
 </Project>

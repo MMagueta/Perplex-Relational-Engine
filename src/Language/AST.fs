@@ -2,14 +2,8 @@ namespace Language
 
 module AST =
     open Microsoft.FSharp.Reflection
-    open System.IO
     open System.Reflection
     open System.Runtime.Serialization
-    open System.Runtime.Serialization.Formatters.Binary
-    open System.Runtime.Serialization.Json
-    open System.Text
-    open System.Xml
-    open System.Xml.Serialization
         
     [<RequireQualifiedAccess>]
     [<KnownType("GetKnownTypes")>]

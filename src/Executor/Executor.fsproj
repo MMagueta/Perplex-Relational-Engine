@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Language\Language.fsproj" />
     <ProjectReference Include="..\Disk\Disk.fsproj" />
+    <ProjectReference Include="..\Configuration\Configuration.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

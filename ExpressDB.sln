@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-#
+# 
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Language", "src\Language\Language.fsproj", "{DD8A8A59-86D1-4450-BCA6-1165D7A27751}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Disk", "src\Disk\Disk.fsproj", "{41C7C294-23CF-4DE0-8554-DD7D9DE66CF7}"
@@ -10,6 +10,8 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Executor", "src\Executor\Executor.fsproj", "{3F4497D3-1B6F-4248-8A06-2A3D53298FAF}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Server", "src\Server\Server.csproj", "{EB94F6D6-C704-4A06-9716-08C5F2387040}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Configuration", "src\Configuration\Configuration.fsproj", "{CFB5001B-7920-4097-B264-7BCE038B49F8}"
 EndProject
 Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
@@ -21,6 +23,8 @@ Global
 		{3F4497D3-1B6F-4248-8A06-2A3D53298FAF}.|Any CPU.Build.0 = Debug|Any CPU
 		{EB94F6D6-C704-4A06-9716-08C5F2387040}.|Any CPU.ActiveCfg = Debug|Any CPU
 		{EB94F6D6-C704-4A06-9716-08C5F2387040}.|Any CPU.Build.0 = Debug|Any CPU
+		{CFB5001B-7920-4097-B264-7BCE038B49F8}.|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFB5001B-7920-4097-B264-7BCE038B49F8}.|Any CPU.Build.0 = Debug|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		|Any CPU = |Any CPU
@@ -30,5 +34,6 @@ Global
 		{41C7C294-23CF-4DE0-8554-DD7D9DE66CF7} = {6AD0B9F5-B56E-418D-8CC6-B8C45BB86B3D}
 		{DD8A8A59-86D1-4450-BCA6-1165D7A27751} = {6AD0B9F5-B56E-418D-8CC6-B8C45BB86B3D}
 		{EB94F6D6-C704-4A06-9716-08C5F2387040} = {6AD0B9F5-B56E-418D-8CC6-B8C45BB86B3D}
+		{CFB5001B-7920-4097-B264-7BCE038B49F8} = {6AD0B9F5-B56E-418D-8CC6-B8C45BB86B3D}
 	EndGlobalSection
 EndGlobal

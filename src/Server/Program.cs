@@ -3,14 +3,25 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using Configuration;
 using Language;
 using Microsoft.FSharp.Collections;
-using Serilog;
 
 class Program
 {
     static void Main(string[] args)
     {
+
+        var config = Builder.loadConfiguration();
+
+        Serilog.ILogger logger;
+
+        if (config.IsOk){
+            logger = config.ResultValue.Logger;
+        }else {
+            throw new Exception(config.ErrorValue);
+        }
+
         // Create a TCP/IP socket
         Socket listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
@@ -37,15 +48,13 @@ class Program
                 string response = "For now there is no response apart from success.";
                 try
                 {
-                    var result = ExpressDB.Executor.Runner.execute(ast.Value, schema);
+                    var result = ExpressDB.Executor.Runner.execute(logger, ast.Value, schema);
                     schema = result.Item2;
-                    Log.Logger.ForContext("ExecutionType", "Runner").ForContext("Identifier", System.Guid.NewGuid())
-                        .Information($"Finished running '{result.Kind}'");
+                    logger.ForContext("ExecutionType", "Runner").Information($"Finished running '{result.Kind}'");
                 }
                 catch (Exception e)
                 {
-                    Log.Logger.ForContext("ExecutionType", "Runner").ForContext("Identifier", System.Guid.NewGuid())
-                        .Error(e.Message);
+                    logger.ForContext("ExecutionType", "Runner").Error(e.Message);
                     response = $"Failed: {e.Message}";
                 }
                 
