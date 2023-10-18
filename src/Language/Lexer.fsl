@@ -8,7 +8,7 @@ let newline (lexbuf: LexBuffer<_>) =
 
 }
 
-// Regular expressions
+// Regular Perplexions
 let whitespace = [' ' '\t']
 let newline = ('\n' | '\r' '\n')
 let leftLim = '('

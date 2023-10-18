@@ -1,4 +1,4 @@
-namespace ExpressDB.Language
+namespace PerplexDB.Language
 
 module Main =
     open System.IO

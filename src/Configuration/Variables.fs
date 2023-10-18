@@ -12,7 +12,6 @@ module Variables =
 
     [<Convention("PERPLEX")>]
     type ConfigurationVariables = {
-        [<CustomName("STATS")>]
         LoggingLevel: LoggingLevel
         [<DefaultValue("/tmp/perplexdb/logs")>]
         LoggingPath: string

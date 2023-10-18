@@ -21,7 +21,7 @@ open Language
 
 // This is the type of the data produced by a successful reduction of the 'start'
 // symbol:
-%type < AST.Expression option > start
+%type < AST.Perplexion option > start
 
 %%
 
@@ -33,13 +33,13 @@ start: File end { $1 }
      | end      { None }
 
 File:
-	| Expression { Some $1 }
+	| Perplexion { Some $1 }
 
-Expression:
+Perplexion:
 	| CREATE RELATION IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM 
-	    { AST.Expression.CreateRelation ($3, Map.ofList $5) }
+	    { AST.Perplexion.CreateRelation ($3, Map.ofList $5) }
 	| INSERT IDENTIFIER LEFT_LIM ListValues RIGHT_LIM
-	    { AST.Expression.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: AST.InsertFieldInfo) $4 |> Array.ofList) }
+	    { AST.Perplexion.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: AST.InsertFieldInfo) $4 |> Array.ofList) }
 
 ListAttributes:
   | { [] }

@@ -28,15 +28,15 @@ class Program
         // Bind the socket to the local endpoint and listen for incoming connections
         try
         {
-            System.Console.WriteLine($"Running at {IPAddress.Any}:4000");
+            logger.ForContext("ExecutionContext", "Server").Information($"Running at {IPAddress.Any}:4000");
             listener.Bind(new IPEndPoint(IPAddress.Any, 4000));
             listener.Listen(10);
 
-            FSharpMap<string, AST.Entity> schema = ExpressDB.Executor.Main.schema;
+            FSharpMap<string, AST.Entity> schema = PerplexDB.Executor.Main.schema;
 
             while (true)
             {
-                Console.WriteLine("Waiting for a connection...");
+                logger.ForContext("ExecutionContext", "Runner").Information("Waiting for a connection...");
 
                 // Accept a connection and create a new socket to handle communication
                 Socket handler = listener.Accept();
@@ -44,17 +44,17 @@ class Program
                 byte[] buffer = new byte[1024];
                 int bytesReceived = handler.Receive(buffer);
                 string request = Encoding.ASCII.GetString(buffer, 0, bytesReceived);
-                var ast = ExpressDB.Language.Main.generateAST(request);
+                var ast = PerplexDB.Language.Main.generateAST(request);
                 string response = "For now there is no response apart from success.";
                 try
                 {
-                    var result = ExpressDB.Executor.Runner.execute(logger, ast.Value, schema);
+                    var result = PerplexDB.Executor.Runner.execute(logger, ast.Value, schema);
                     schema = result.Item2;
-                    logger.ForContext("ExecutionType", "Runner").Information($"Finished running '{result.Kind}'");
+                    logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{result.Kind}'");
                 }
                 catch (Exception e)
                 {
-                    logger.ForContext("ExecutionType", "Runner").Error(e.Message);
+                    logger.ForContext("ExecutionContext", "Server").Error(e.Message);
                     response = $"Failed: {e.Message}";
                 }
                 
@@ -67,7 +67,7 @@ class Program
         }
         catch (Exception e)
         {
-            Console.WriteLine(e.ToString());
+            logger.ForContext("ExecutionContext", "Runner").Information(e.ToString());
         }
     }
 }

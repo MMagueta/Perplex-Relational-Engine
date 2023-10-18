@@ -1,4 +1,4 @@
-﻿module ExpressDB.Pager.PhysicalStorage
+﻿module PerplexDB.Pager.PhysicalStorage
 
 open System
 open System.IO
@@ -41,7 +41,7 @@ type Page =
                      EndingPosition = PAGE_SIZE } }
 
 [<RequireQualifiedAccessAttribute>]
-module ExpressDBError =
+module PerplexDBError =
     exception Serialization of string
 
 let blanks lowerBound upperBound =
@@ -82,7 +82,7 @@ module Row =
             |> Array.map (snd >> snd)
             |> Array.concat
             |> Ok
-        | None -> Error(ExpressDBError.Serialization "")
+        | None -> Error(PerplexDBError.Serialization "")
 
     let write (logger: Serilog.ILogger) (position: int) (slotSize: int) (entity: string) (content: byte array) =
         let path = __SOURCE_DIRECTORY__ + "/../" + entity
