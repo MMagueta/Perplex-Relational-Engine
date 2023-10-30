@@ -82,9 +82,9 @@ module Runner =
                  State = PerplexDB.Pager.PhysicalStorage.PageState.Filled } |] }
         : PerplexDB.Pager.PhysicalStorage.Page
 
-    let execute (logger: ILogger) (Perplexion: Perplexion) (schema: Schema) =
-        match Perplexion with
-        | Perplexion.Insert(relationName, fields) ->
+    let execute (logger: ILogger) (Expression: Expression) (schema: Schema) =
+        match Expression with
+        | Expression.Insert(relationName, fields) ->
             let (Table tableInfo) = schema.[relationName]
 
             fields
@@ -110,7 +110,7 @@ module Runner =
             Schema.persist(updatedSchema)
 
             Effect("INSERT", updatedSchema)
-        | Perplexion.CreateRelation(relationName, attributes) when (Map.tryFind relationName schema).IsNone ->
+        | Expression.CreateRelation(relationName, attributes) when (Map.tryFind relationName schema).IsNone ->
             let updatedSchema =
                 attributes // Assuming *relationName* doesn't exist already
                 |> Map.toList
@@ -129,7 +129,7 @@ module Runner =
             Schema.persist(schema)
 
             Effect("CREATED RELATION", updatedSchema)
-        | Perplexion.CreateRelation(relationName, _) when (Map.tryFind relationName schema).IsSome ->
+        | Expression.CreateRelation(relationName, _) when (Map.tryFind relationName schema).IsSome ->
             let msg = "Attempted to recreate relation without specifying explicit overwrite. Try `CREATE RELATION OVERRIDE`"
             Log.Logger.ForContext("ExecutionContext", "Serialization").ForContext("Identifier", System.Guid.NewGuid()).Error(msg)
             failwith msg

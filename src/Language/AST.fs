@@ -48,7 +48,7 @@ module AST =
         | LUniqueIdentifier of System.Guid
 
     [<RequireQualifiedAccess>]
-    type Perplexion =
+    type Expression =
         | Insert of Name: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Types>
 
