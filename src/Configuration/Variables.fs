@@ -12,6 +12,7 @@ module Variables =
 
     [<Convention("PERPLEX")>]
     type ConfigurationVariables = {
+        [<DefaultValue("Debug")>]
         LoggingLevel: LoggingLevel
         [<DefaultValue("/tmp/perplexdb/logs")>]
         LoggingPath: string

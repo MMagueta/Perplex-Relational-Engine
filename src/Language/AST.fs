@@ -4,7 +4,7 @@ module AST =
     open Microsoft.FSharp.Reflection
     open System.Reflection
     open System.Runtime.Serialization
-        
+
     [<RequireQualifiedAccess>]
     [<KnownType("GetKnownTypes")>]
     type Types =
@@ -19,25 +19,34 @@ module AST =
             | Types.FixedCharacters n
             | Types.VariableCharacters n -> n
             | Types.UniqueIdentifier -> 36
+
         static member GetKnownTypes() =
-            typedefof<Types>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic) 
+            typedefof<Types>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic)
             |> Array.filter FSharpType.IsUnion
-    
+
     module Kind =
         [<DataContract>]
-        type FieldMetadata = { [<field : DataMember>] Position: int; [<field : DataMember>] Type': Types }
+        type FieldMetadata =
+            { [<field: DataMember>]
+              Position: int
+              [<field: DataMember>]
+              Type': Types }
 
         [<DataContract>]
         type Table =
-            { [<field : DataMember>] Name: string
-              [<field : DataMember>] RowCount: int
-              [<field : DataMember>] Attributes: Map<string, FieldMetadata> }
+            { [<field: DataMember>]
+              Name: string
+              [<field: DataMember>]
+              RowCount: int
+              [<field: DataMember>]
+              Attributes: Map<string, FieldMetadata> }
 
     [<KnownType("GetKnownTypes")>]
     type Entity =
         | Table of Kind.Table
+
         static member GetKnownTypes() =
-            typedefof<Entity>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic) 
+            typedefof<Entity>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic)
             |> Array.filter FSharpType.IsUnion
 
     [<DataContract>]
