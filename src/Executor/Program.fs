@@ -1,11 +1,9 @@
-﻿namespace PerplexDB.Executor
+﻿namespace Executor
 
-open System.Diagnostics
 open System.IO
 open Serilog
 
-module Xml =
-    open System.IO
+module private Xml =
     open System.Runtime.Serialization
     open System.Text
 
@@ -19,11 +17,26 @@ module Xml =
         let obj = DataContractSerializer(typeof<'T>).ReadObject(ms) 
         obj :?> 'T
         
-module Optimizer =
-    failwith "Not implemented"
+[<RequireQualifiedAccess>]
+module Schema = begin
+    let persist (schema: Language.Schema.t) =
+        let text =
+            Map.fold (fun acc name entity ->
+                let xml = Xml.serialize<Language.Entity.t> entity
+                $"{acc}|{name}|{xml}"
+                ) "" schema
+        System.IO.File.WriteAllText("/tmp/perplexdb/schema.xml", text)
+    let loadFromDisk () =
+        try
+            let text = System.IO.File.ReadAllText("/tmp/perplexdb/schema.xml")
+            let map = Map.ofArray (text.Split("|") |> Array.filter (function "" -> false | _ -> true) |> Array.chunkBySize 2 |> Array.map (fun xs -> (xs.[0], xs.[1])))
+            Map.map (fun (k: string) v -> Xml.deserialize<Language.Entity.t>(v)) map
+        with :? System.IO.FileNotFoundException ->
+            Map.empty
+end
 
 module Runner =
-    open Language.AST
+    open Language
 
     let _ =
         Log.Logger <-
@@ -34,75 +47,52 @@ module Runner =
                 .WriteTo.File(__SOURCE_DIRECTORY__ + "/Logs", outputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] [{ExecutionContext}-{Identifier}] {Message:l}{NewLine}{Exception}")
                 .CreateLogger()
     
-    type Schema = Map<Name, Entity>
-    and Name = string
     
-    [<RequireQualifiedAccess>]
-    module Schema =
-        let TableByteSize ((Table table): Entity) =
-            table.Attributes
-            |> Map.fold (fun acc _ { Position = _; Type' = value } -> acc + value.ByteSize) 0
-        let persist (schema: Schema) =
-            let text =
-                Map.fold (fun acc name entity ->
-                    let xml = Xml.serialize<Entity> entity
-                    $"{acc}|{name}|{xml}"
-                    ) "" schema
-            System.IO.File.WriteAllText(__SOURCE_DIRECTORY__ + "/../schema.xml", text)
-        let loadFromDisk () =
-            try
-                let text = System.IO.File.ReadAllText(__SOURCE_DIRECTORY__ + "/../schema.xml")
-                let map = Map.ofArray (text.Split("|") |> Array.filter (function "" -> false | _ -> true) |> Array.chunkBySize 2 |> Array.map (fun xs -> (xs.[0], xs.[1])))
-                Map.map (fun (k: string) v -> Xml.deserialize<Entity>(v)) map
-            with :? System.IO.FileNotFoundException ->
-                Map.empty
-    let createRow (logger: ILogger) (relationName: string) (schema: Schema) =
-        PerplexDB.Pager.PhysicalStorage.Row.serialize logger schema relationName
-        >> function
-            | Ok ba -> ba
-            | Error ex -> failwith ex.Message
+    // let createRow (logger: ILogger) (relationName: string) (schema: Schema.t) =
+        // IO.Write.convertFact schema relationName
+        // >> function
+            // | Ok ba -> ba
+            // | Error ex -> failwith ex.Message
 
     type ExecutionResult =
         | Effect of
             Kind: string *
-            Schema (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
+            Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
 
     /// This function needs to be replaced by allocating the writes
     /// into another representation, not in a page, which is for reads in my design.
     /// - *RowID* and *Position* can be removed once metadata is added to the file header.
-    let createPage relationName bytes rowID size =
-        { Entity = relationName
-          Header =
-            { StartingPosition = 0
-              EndingPosition = 1 }
-          Content =
-            [| { Content = bytes
-                 Position = rowID
-                 Size = size
-                 State = PerplexDB.Pager.PhysicalStorage.PageState.Filled } |] }
-        : PerplexDB.Pager.PhysicalStorage.Page
+    // let createPage relationName bytes rowID size =
+    //     { Entity = relationName
+    //       Header =
+    //         { StartingPosition = 0
+    //           EndingPosition = 1 }
+    //       Content =
+    //         [| { Content = bytes
+    //              Position = rowID
+    //              Size = size
+    //              State = PerplexDB.Pager.PhysicalStorage.PageState.Filled } |] }
+    //     : PerplexDB.Pager.PhysicalStorage.Page
 
-    let execute (logger: ILogger) (Expression: Expression) (schema: Schema) =
+    let execute (logger: ILogger) (Expression: Expression.t) (schema: Schema.t) =
         match Expression with
         | Expression.Insert(relationName, fields) ->
-            let (Table tableInfo) = schema.[relationName]
+            let (Entity.Relation (tableInfo, _)) = schema.[relationName]
 
             fields
             |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
-            |> createRow logger relationName schema
-            |> PerplexDB.Pager.PhysicalStorage.Row.write
-                logger
-                tableInfo.RowCount
-                (Schema.TableByteSize schema.[relationName])
+            // |> createRow logger relationName schema
+            |> IO.Write.Disk.writeFact
+                schema
                 relationName
+                // (Schema.TableByteSize schema.[relationName])
+                // tableInfo.RowCount
             let updatedSchema =
                 Map.change
                     relationName
                     (function
-                    | (Some(Table tableInfo)) ->
-                        Table
-                            { tableInfo with
-                                RowCount = tableInfo.RowCount + 1 }
+                    | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                        Entity.Relation (relationAttributes, physicalOffset + 1l)
                         |> Some
                     | _ -> None)
                     schema
@@ -115,18 +105,15 @@ module Runner =
                 attributes // Assuming *relationName* doesn't exist already
                 |> Map.toList
                 |> List.mapi (fun i (attributeName, type') ->
-                    (attributeName, ({ Position = i; Type' = type' }: Kind.FieldMetadata)))
+                    (attributeName, ({ fieldPosition = i; type' = type' }: Entity.FieldMetadata)))
                 |> Map
                 |> fun attributes ->
                     Map.add
                         relationName
-                        (Entity.Table
-                            { Name = relationName
-                              RowCount = 0
-                              Attributes = attributes })
+                        (Entity.Relation (attributes, 0l))
                         schema
                         
-            Schema.persist(schema)
+            Schema.persist(updatedSchema)
 
             Effect("CREATED RELATION", updatedSchema)
         | Expression.CreateRelation(relationName, _) when (Map.tryFind relationName schema).IsSome ->

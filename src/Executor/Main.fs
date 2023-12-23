@@ -1,9 +1,8 @@
-namespace PerplexDB.Executor
-
-open PerplexDB.Executor.Runner
+namespace Executor
 
 module Main =
-    open Language.AST
+    open Language
+    open Runner
                 
     let schema = Schema.loadFromDisk()
     
@@ -15,16 +14,16 @@ module Main =
             | Error err -> failwith err
 
         let createRelationExpr =
-            Expression.CreateRelation ("king", Map.empty |> Map.add "name" (Types.VariableCharacters 20))
+            Expression.CreateRelation ("king", Map.empty |> Map.add "name" (Type.TVariableString 20))
 
         let insertRowExpr1 =
-            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Types.VariableCharacters 20); FieldValue = ELiteral.LVarChar "Gaiseric"} |])
+            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Type.TVariableString 20); FieldValue = Value.VVariableString "Gaiseric"} |])
 
         let insertRowExpr2 =
-            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Types.VariableCharacters 20); FieldValue = ELiteral.LVarChar "Thunderic"} |])
+            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Type.TVariableString 20); FieldValue = Value.VVariableString "Thunderic"} |])
             
         let insertRowExpr3 =
-            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Types.VariableCharacters 20); FieldValue = ELiteral.LVarChar "Balderic"} |])
+            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Type.TVariableString 20); FieldValue = Value.VVariableString "Balderic"} |])
         
         let schema = Schema.loadFromDisk()
         logger.ForContext("ExecutionContext", "Runner").Debug(schema.ToString())

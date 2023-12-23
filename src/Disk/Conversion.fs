@@ -1,109 +1,93 @@
-﻿module PerplexDB.Pager.PhysicalStorage
+﻿namespace IO
 
-open System
-open System.IO
-open Language.AST
+module Utilities = begin
+  [<RequireQualifiedAccess>]
+  module String = begin
+    let toBytes: string -> byte array =
+        Array.ofSeq >> Array.collect (System.BitConverter.GetBytes >> Array.take 1)
+  end 
+end
 
-[<Literal>]
-let PAGE_SIZE = 50
+module Write = begin
+  open Language
+  open Utilities
 
-type Schema = Map<Name, Entity>
-and Name = string
+  type Fact = Map<string, Value.t>
 
-[<RequireQualifiedAccess>]
-module Schema =
-    let TableByteSize ((Table table): Entity) =
-        table.Attributes
-        |> Map.fold (fun acc k { Position = _; Type' = value } -> acc + value.ByteSize) 0
+  let convertLiteral (relationAttributes: Map<string, Entity.FieldMetadata>) (attributeName: string) (literal: Value.t): int32 * byte array =
+    match literal, Map.tryFind attributeName relationAttributes with
+    | Value.VVariableString elem, Some {fieldPosition = fieldPosition; type' = Type.TVariableString specificationSize} ->
+       let serializedString = String.toBytes elem in
+       /// Filling with the rest of the string specified size
+       let serializedValue =
+           Array.append
+               serializedString
+               [| for _ in 1..(specificationSize - serializedString.Length) do 0uy |]
+       (fieldPosition, serializedValue)
+    | Value.VInteger32 elem, Some {fieldPosition = fieldPosition; type' = Type.TInteger32} ->
+       let serializedValue = System.BitConverter.GetBytes elem
+       (fieldPosition, serializedValue)
+    | _, Some _ -> failwith <| Printf.sprintf "Type mismatch for attribute '%s'." attributeName
+    | _, None -> failwith <| Printf.sprintf "Attribute '%s' is not part of the relation." attributeName
 
-type PageState =
-    | Filled
-    | Empty
+  let convertFact (schema: Schema.t) (relationName: string) (fact: Fact) =
+    match Map.tryFind relationName schema with
+    | Some (Entity.Relation (relationAttributes, _)) ->
+       Map.fold
+         (fun acc key value -> Array.append [| convertLiteral relationAttributes key value |] acc)
+         [||]
+         fact
+       |> Array.sortBy fst
+       |> Array.map snd
+       |> Array.concat
+    | None -> failwithf "Relation '%s' could not be located in the working schema." relationName
 
-type PageSlot =
-    { Content: byte array
-      State: PageState
-      Size: int
-      Position: int }
+  module Disk = begin
+    open System
+    open System.IO
+    
+    let writeFact (schema: Schema.t) (relationName: string) (fact: Fact) : unit =
+        match Map.tryFind relationName schema with
+        | Some (Entity.Relation (relationAttributes, physicalOffset)) ->
+            let content = convertFact schema relationName fact
+            let relationDefinitionSize = Schema.relationSize relationAttributes in
+            let path = "/tmp/perplexdb/" + relationName + ".ndf" in
+            use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate) in
+            use binaryStream = new IO.BinaryWriter(stream) in
+            // logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
+            let offset = physicalOffset * relationDefinitionSize
+            let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
+            // Fill with blanks
+            binaryStream.Write [| for _ in 0..(relationDefinitionSize - 1) do 0uy |]
+            let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
+            binaryStream.Write content
+        | _ -> ()
+       
+  end  
+end
 
-type PageHeader =
-    { StartingPosition : int
-      EndingPosition : int }
+module Read = begin
+  open Language
 
-type Page =
-    { Content: PageSlot array
-      Entity: Name
-      Header: PageHeader }
-    static member New(): Page =
-        { Content = [||]
-          Entity = "";
-          Header = { StartingPosition = 0
-                     EndingPosition = PAGE_SIZE } }
-
-[<RequireQualifiedAccessAttribute>]
-module PerplexDBError =
-    exception Serialization of string
-
-let blanks lowerBound upperBound =
-    seq {
-        for _ in lowerBound..upperBound do
-            0uy
-    }
-
-module Row =
-
-    let private serializeLiteral (logger: Serilog.ILogger) (metadata: Kind.Table) (name: Name) (elem: ELiteral) =
-        match elem, Map.tryFind name metadata.Attributes with
-        | LInteger value, Some { Position = position; Type' = _ } ->
-            (position, BitConverter.GetBytes value)
-        | LUniqueIdentifier value, Some { Position = position; Type' = _ } ->
-            let serializedGuid =
-                value.ToString()
-                |> Array.ofSeq
-                |> Array.collect (BitConverter.GetBytes >> Array.take 1) in
-            (position, serializedGuid)
-        | LVarChar value,
-          Some { Position = position
-                 Type' = Types.VariableCharacters storageSize } ->
-            if value.Length > storageSize
-            then logger.ForContext("ExecutionContext", "Serialization").Warning("Value for field '{a}' was truncated. Maximum size is {b}, however received {c}.", name, storageSize, value.Length)
-            value.[0 .. (storageSize)]
-            |> Seq.map (BitConverter.GetBytes >> fun x -> x.[0])
-            |> fun bytes -> Seq.append bytes (blanks 1 (storageSize - value.Length))
-            |> fun bytes -> (position, Array.ofSeq bytes)
-        | _ -> failwith "Not implemented"
-
-    let serialize (logger: Serilog.ILogger) (schema: Schema) (entity: Name) (tuple: Map<Name, ELiteral>) : Result<byte array, exn> =
-        match Map.tryFind entity schema with
-        | Some(Table table) ->
-            Map.map (serializeLiteral logger table) tuple
-            |> Map.toArray
-            |> Array.sortBy (snd >> fst)
-            |> Array.map (snd >> snd)
-            |> Array.concat
-            |> Ok
-        | None -> Error(PerplexDBError.Serialization "")
-
-    let write (logger: Serilog.ILogger) (position: int) (slotSize: int) (entity: string) (content: byte array) =
-        let path = __SOURCE_DIRECTORY__ + "/../" + entity
-        use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate)
-        use binaryStream = new IO.BinaryWriter(stream)
+  type ColumnMap = Map<string, Value.t>
+  
+  let deserialize (schema: Schema.t) (entityName: string) (stream: byte array): ColumnMap =
+    match Map.tryFind entityName schema with
+    | Some (Entity.Relation (relationAttributes, _)) ->
+        let columns  =
+          Map.toList relationAttributes
+          |> List.sortBy (fun (_, (x: Entity.FieldMetadata)) -> x.fieldPosition)
+          |> List.map (fun (name, {type' = type';}) -> (type', name))
+        in
         
-        logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
-        let offset = position * slotSize
-        let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
-        binaryStream.Write(blanks 0 (slotSize - 1) |> Array.ofSeq)
-        let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
-        binaryStream.Write(content)
+        let rec reconstruct_columns acc stream = function
+          | [] -> acc
+          | (type', name)::[] ->
+             (name, Value.t.FromBytes type' stream) :: acc
+          | (type', name)::typesRest ->
+             let ret = (name, Value.t.FromBytes type' stream) :: acc in
+             reconstruct_columns ret (stream.[0..(stream.Length - type'.ByteSize)]) typesRest
+        in reconstruct_columns [] stream columns |> Map.ofList
+    | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
+end
 
-    let loadPage (schema: Schema) (entityName: string) (page: Page) =
-        let path = __SOURCE_DIRECTORY__ + "/../" + entityName
-        use stream = new IO.FileStream(path, IO.FileMode.Open)
-        use binaryStream = new IO.BinaryReader(stream)
-        let entityBlockSize = Schema.TableByteSize schema.[entityName]
-        let amountOfRows = System.Math.Floor (PAGE_SIZE / entityBlockSize |> decimal) |> int
-        let _ = stream.Seek(page.Header.StartingPosition, SeekOrigin.Begin)
-        binaryStream.ReadBytes amountOfRows
-
-    let pageLifter (schema: Schema) (entityName: string): Page array =
-        [| for _ in 0..2 do Page.New() |]

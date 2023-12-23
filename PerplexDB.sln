@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# 
+#
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Language", "src\Language\Language.fsproj", "{DD8A8A59-86D1-4450-BCA6-1165D7A27751}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Disk", "src\Disk\Disk.fsproj", "{41C7C294-23CF-4DE0-8554-DD7D9DE66CF7}"
@@ -11,7 +11,7 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Executor", "src\Executor\Ex
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Configuration", "src\Configuration\Configuration.fsproj", "{CFB5001B-7920-4097-B264-7BCE038B49F8}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "ServerPort", "src\Server\ServerPort.fsproj", "{0287C181-1BC9-48CB-BB70-516E4CBBF81B}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Server", "src\Server\Server.fsproj", "{0287C181-1BC9-48CB-BB70-516E4CBBF81B}"
 EndProject
 Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution

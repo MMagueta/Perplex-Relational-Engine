@@ -21,7 +21,7 @@ open Language
 
 // This is the type of the data produced by a successful reduction of the 'start'
 // symbol:
-%type < AST.Expression option > start
+%type < Expression.t option > start
 
 %%
 
@@ -33,13 +33,13 @@ start: File end { $1 }
      | end      { None }
 
 File:
-	| Expression { Some $1 }
+	| Statement { Some $1 }
 
-Expression:
+Statement:
 	| CREATE RELATION IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM 
-	    { AST.Expression.CreateRelation ($3, Map.ofList $5) }
+	    { Expression.CreateRelation ($3, Map.ofList $5) }
 	| INSERT IDENTIFIER LEFT_LIM ListValues RIGHT_LIM
-	    { AST.Expression.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: AST.InsertFieldInfo) $4 |> Array.ofList) }
+	    { Expression.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: Expression.InsertFieldInfo) $4 |> Array.ofList) }
 
 ListAttributes:
   | { [] }
@@ -48,17 +48,17 @@ ListAttributes:
 Rev_Attributes:
   | IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM
     { match $2 with
-      | "VARCHAR" -> [($1, AST.Types.VariableCharacters $4)] }
+      | "VARCHAR" -> [($1, Type.TVariableString $4)] }
   | IDENTIFIER TYPE' 
     { match $2 with
-      | "INTEGER" -> [($1, AST.Types.Integer32)]
+      | "INTEGER" -> [($1, Type.TInteger32)]
       | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size." }
   | Rev_Attributes IDENTIFIER TYPE' { ($2, match $3 with
-                                           | "INTEGER" -> AST.Types.Integer32
+                                           | "INTEGER" -> Type.TInteger32
                                            | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size.") :: $1 }
   | Rev_Attributes IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM 
     { ($2, match $3 with
-           | "VARCHAR" -> AST.Types.VariableCharacters $5) :: $1 }
+           | "VARCHAR" -> Type.TVariableString $5) :: $1 }
 
 ListValues:
   | { [] }
@@ -67,18 +67,18 @@ ListValues:
 Rev_Values:
   | IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM LITERAL_STRING
     { match $2 with
-      | "VARCHAR" -> [($1, AST.Types.VariableCharacters $4, AST.ELiteral.LVarChar $6)] }
+      | "VARCHAR" -> [($1, Type.TVariableString $4, Value.VVariableString $6)] }
   | IDENTIFIER TYPE' LITERAL_INTEGER
     { match $2 with
-      | "INTEGER" -> [($1, AST.Types.Integer32, AST.ELiteral.LInteger $3)]
+      | "INTEGER" -> [($1, Type.TInteger32, Value.VInteger32 $3)]
       | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size." }
   | Rev_Values IDENTIFIER TYPE' LITERAL_INTEGER
     { ($2, (match $3 with
-            | "INTEGER" -> AST.Types.Integer32
-            | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size."), AST.ELiteral.LInteger $4) :: $1 }
+            | "INTEGER" -> Type.TInteger32
+            | "VARCHAR" -> failwith "VARCHAR is a parametric type, therefore it requires a size."), Value.VInteger32 $4) :: $1 }
   | Rev_Values IDENTIFIER TYPE' LEFT_LIM LITERAL_INTEGER RIGHT_LIM LITERAL_STRING 
     { ($2, (match $3 with
-            | "VARCHAR" -> AST.Types.VariableCharacters $5), AST.ELiteral.LVarChar $7) :: $1 }
+            | "VARCHAR" -> Type.TVariableString $5), Value.VVariableString $7) :: $1 }
 
 // Using F# keywords for nonterminal names is okay.
 end: EOF { None }

@@ -22,6 +22,25 @@ module Type = begin
 end
 
 [<RequireQualifiedAccess>]
+module Value = begin
+    [<DataContract>]
+    type t =
+        | VInteger32 of int32
+        | VVariableString of string
+        static member FromBytes (expected: Type.t) (stream: byte array): t =
+            match expected with
+            | Type.TInteger32 ->
+                if stream.Length = 4 then
+                    System.BitConverter.ToInt32 stream
+                    |> VInteger32
+                else failwithf "Int32 expects bytes of size 4, got: %d" stream.Length
+            | Type.TVariableString size ->
+                if stream.Length = size then
+                    VVariableString (System.BitConverter.ToString stream)
+                else failwithf "String(%d) received the wrong size: %d" size stream.Length
+end
+
+[<RequireQualifiedAccess>]
 module Entity = begin
     [<DataContract>]
     type FieldMetadata =
@@ -40,14 +59,6 @@ module Entity = begin
 end
 
 [<RequireQualifiedAccess>]
-module Value = begin
-    [<DataContract>]
-    type t =
-        | VInteger32 of int
-        | VVariableString of string
-end
-
-[<RequireQualifiedAccess>]
 module Expression = begin
     type InsertFieldInfo =
         { FieldName: string
@@ -58,3 +69,13 @@ module Expression = begin
         | Insert of Name: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
 end
+
+[<RequireQualifiedAccess>]
+module Schema = begin
+  type t = Map<string, Entity.t>
+
+  let relationSize (relationAttributes: Map<string, Entity.FieldMetadata>) : int32 =
+      relationAttributes
+      |> Map.fold (fun acc _ ({type' = type'}: Entity.FieldMetadata) -> acc + type'.ByteSize) 0l
+end
+

@@ -1,4 +1,5 @@
 module Lexer
+
 # 1 "Lexer.fsl"
  
 
@@ -9,7 +10,7 @@ let newline (lexbuf: LexBuffer<_>) =
   lexbuf.StartPos <- lexbuf.StartPos.NextLine
 
 
-# 12 "Lexer.fs"
+# 13 "Lexer.fs"
 let trans : uint16[] array = 
     [| 
     (* State 0 *)
@@ -128,67 +129,67 @@ and tokenStream  lexbuf =
   | 0 -> ( 
 # 30 "Lexer.fsl"
                               Parser.CREATE 
-# 131 "Lexer.fs"
+# 132 "Lexer.fs"
           )
   | 1 -> ( 
 # 31 "Lexer.fsl"
                               Parser.RELATION 
-# 136 "Lexer.fs"
+# 137 "Lexer.fs"
           )
   | 2 -> ( 
 # 32 "Lexer.fsl"
                               Parser.INSERT 
-# 141 "Lexer.fs"
+# 142 "Lexer.fs"
           )
   | 3 -> ( 
 # 33 "Lexer.fsl"
                          Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) 
-# 146 "Lexer.fs"
+# 147 "Lexer.fs"
           )
   | 4 -> ( 
 # 34 "Lexer.fsl"
                                 Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) 
-# 151 "Lexer.fs"
+# 152 "Lexer.fs"
           )
   | 5 -> ( 
 # 35 "Lexer.fsl"
                               Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) 
-# 156 "Lexer.fs"
+# 157 "Lexer.fs"
           )
   | 6 -> ( 
 # 36 "Lexer.fsl"
                               read_string "" false lexbuf 
-# 161 "Lexer.fs"
+# 162 "Lexer.fs"
           )
   | 7 -> ( 
 # 38 "Lexer.fsl"
                               tokenStream lexbuf 
-# 166 "Lexer.fs"
+# 167 "Lexer.fs"
           )
   | 8 -> ( 
 # 39 "Lexer.fsl"
                             newline lexbuf; tokenStream lexbuf 
-# 171 "Lexer.fs"
+# 172 "Lexer.fs"
           )
   | 9 -> ( 
 # 40 "Lexer.fsl"
                               Parser.LEFT_LIM 
-# 176 "Lexer.fs"
+# 177 "Lexer.fs"
           )
   | 10 -> ( 
 # 41 "Lexer.fsl"
                               Parser.RIGHT_LIM 
-# 181 "Lexer.fs"
+# 182 "Lexer.fs"
           )
   | 11 -> ( 
 # 43 "Lexer.fsl"
                            failwith ("ParseError" + LexBuffer<_>.LexemeString lexbuf) 
-# 186 "Lexer.fs"
+# 187 "Lexer.fs"
           )
   | 12 -> ( 
 # 44 "Lexer.fsl"
                            Parser.EOF 
-# 191 "Lexer.fs"
+# 192 "Lexer.fs"
           )
   | _ -> failwith "tokenStream"
 // Rule read_string
@@ -197,17 +198,17 @@ and read_string str ignorequote lexbuf =
   | 0 -> ( 
 # 47 "Lexer.fsl"
                                    if ignorequote then (read_string (str+"\\\"") false lexbuf) else Parser.LITERAL_STRING (str) 
-# 200 "Lexer.fs"
+# 201 "Lexer.fs"
           )
   | 1 -> ( 
 # 48 "Lexer.fsl"
                                    read_string str true lexbuf 
-# 205 "Lexer.fs"
+# 206 "Lexer.fs"
           )
   | 2 -> ( 
 # 49 "Lexer.fsl"
                                    read_string (str+(LexBuffer<_>.LexemeString lexbuf)) false lexbuf 
-# 210 "Lexer.fs"
+# 211 "Lexer.fs"
           )
   | _ -> failwith "read_string"
 
