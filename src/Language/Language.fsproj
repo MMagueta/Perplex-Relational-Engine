@@ -6,7 +6,7 @@
     <FsYaccToolPath>$(PkgFsLexYacc)/build/fsyacc/net6.0</FsYaccToolPath>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="AST.fs" />
+    <Compile Include="Language.fs" />
     <FsYacc Include="Parser.fsy">
       <OtherFlags>--module Parser</OtherFlags>
     </FsYacc>
