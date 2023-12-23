@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <FsLexToolPath>$(PkgFsLexYacc)/build/fslex/net6.0</FsLexToolPath>
     <FsYaccToolPath>$(PkgFsLexYacc)/build/fsyacc/net6.0</FsYaccToolPath>
