@@ -4,16 +4,18 @@
     (message "Received: %s" response)
     (delete-process process)))
 
-(defun perplex-client ()
+(setq perplex-address "localhost")
+(setq perplex-port 4000)
+
+(defun perplex-client (content)
   ""
-  (interactive)
-  (let* ((address (read-string "Server Address: "))
-	 (port (read-number "Server Port: "))
-	 (connection (open-network-stream "perplexdb" "*perplex-tcp*" address port))
-	 (content (read-string "Query: ")))
+  (let ((connection (open-network-stream "perplexdb" "*perplex-tcp*" perplex-address perplex-port)))
     (process-put connection :response nil)
     (set-process-filter connection 'perplex-handler)
     (process-send-string connection content)))
 
 (setq default-create-relation "CREATE RELATION Person (Name VARCHAR(10) Age INTEGER)")
 (setq default-insert "INSERT Person (Name VARCHAR(10) \"Marcos\" Age INTEGER 24)")
+
+(perplex-client default-create-relation)
+(perplex-client default-insert)

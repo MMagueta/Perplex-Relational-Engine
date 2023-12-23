@@ -16,7 +16,7 @@ let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
         match result with
         | Executor.Runner.Effect (kind, newSchema) -> 
             logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
-            Ok (schema, "Response, but for now there is nothing useful here.")
+            Ok (newSchema, "Response, but for now there is nothing useful here.")
     with ex ->
         logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
         Error $"Failed: {ex.Message}";
