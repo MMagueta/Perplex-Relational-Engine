@@ -25,13 +25,13 @@ module Schema = begin
                 let xml = Xml.serialize<Language.Entity.t> entity
                 $"{acc}|{name}|{xml}"
                 ) "" schema
-        System.IO.File.WriteAllText("/tmp/perplexdb/schema.xml", text)
+        File.WriteAllText("/tmp/perplexdb/schema.xml", text)
     let loadFromDisk () =
         try
-            let text = System.IO.File.ReadAllText("/tmp/perplexdb/schema.xml")
+            let text = File.ReadAllText("/tmp/perplexdb/schema.xml")
             let map = Map.ofArray (text.Split("|") |> Array.filter (function "" -> false | _ -> true) |> Array.chunkBySize 2 |> Array.map (fun xs -> (xs.[0], xs.[1])))
-            Map.map (fun (k: string) v -> Xml.deserialize<Language.Entity.t>(v)) map
-        with :? System.IO.FileNotFoundException ->
+            Map.map (fun _ v -> Xml.deserialize<Language.Entity.t>(v)) map
+        with :? FileNotFoundException ->
             Map.empty
 end
 
@@ -46,36 +46,14 @@ module Runner =
                 .WriteTo.ColoredConsole(outputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] [{ExecutionContext}-{Identifier}] {Message:l}{NewLine}{Exception}")
                 .WriteTo.File(__SOURCE_DIRECTORY__ + "/Logs", outputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] [{ExecutionContext}-{Identifier}] {Message:l}{NewLine}{Exception}")
                 .CreateLogger()
-    
-    
-    // let createRow (logger: ILogger) (relationName: string) (schema: Schema.t) =
-        // IO.Write.convertFact schema relationName
-        // >> function
-            // | Ok ba -> ba
-            // | Error ex -> failwith ex.Message
 
     type ExecutionResult =
         | Effect of
             Kind: string *
             Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
 
-    /// This function needs to be replaced by allocating the writes
-    /// into another representation, not in a page, which is for reads in my design.
-    /// - *RowID* and *Position* can be removed once metadata is added to the file header.
-    // let createPage relationName bytes rowID size =
-    //     { Entity = relationName
-    //       Header =
-    //         { StartingPosition = 0
-    //           EndingPosition = 1 }
-    //       Content =
-    //         [| { Content = bytes
-    //              Position = rowID
-    //              Size = size
-    //              State = PerplexDB.Pager.PhysicalStorage.PageState.Filled } |] }
-    //     : PerplexDB.Pager.PhysicalStorage.Page
-
-    let execute (logger: ILogger) (Expression: Expression.t) (schema: Schema.t) =
-        match Expression with
+    let execute (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
+        match expression with
         | Expression.Insert(relationName, fields) ->
             let (Entity.Relation (tableInfo, _)) = schema.[relationName]
 
