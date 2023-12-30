@@ -1,7 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
   </PropertyGroup>
+  <!-- <Target Name="libbplustree"> -->
+    <!-- <Exec Command="start $(COMSPEC) /k ; gcc -std=c99 -c bplustree.c; gcc -std=c99 -shared -o libbplustree.so bplustree.o; exit;" /> -->
+  <!-- </Target> -->
   <ItemGroup>
     <Compile Include="Conversion.fs" />
   </ItemGroup>

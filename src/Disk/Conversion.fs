@@ -69,6 +69,9 @@ end
 module Read = begin
   open Language
 
+  open System
+  open System.Runtime.InteropServices
+
   type ColumnMap = Map<string, Value.t>
   
   let deserialize (schema: Schema.t) (entityName: string) (stream: byte array): ColumnMap =
@@ -89,5 +92,33 @@ module Read = begin
              reconstruct_columns ret (stream.[0..(stream.Length - type'.ByteSize)]) typesRest
         in reconstruct_columns [] stream columns |> Map.ofList
     | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
-end
 
+  [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+  extern void print_leaves(void* root);
+  [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+  extern void* insert(void* root, int key, int value);
+
+  let searchOntologicalKey () = // (entityToLoad: string) (key: Value.t) =
+     let tree = insert(IntPtr.Zero, 1, 10)
+     let tree = insert(tree, 1, 10)
+     let tree = insert(tree, 2, 11)
+     let tree = insert(tree, 3, 12)
+     let tree = insert(tree, 4, 13)
+     let tree = insert(tree, 7, 17)
+     let tree = insert(tree, 6, 23)
+     let tree = insert(tree, 10, 73)
+     let tree = insert(tree, 5, 39)
+     let tree = insert(tree, 11, 12)
+     print_leaves(tree)      
+
+  let search (schema: Schema.t) (entityName: string) predicate: ColumnMap =
+      match Map.tryFind entityName schema with
+      | Some (Entity.Relation (relationAttributes, _)) ->
+          failwith "Not implemented."
+      | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
+
+  [<EntryPoint>]
+  let main _ =
+      searchOntologicalKey()
+      0
+end
