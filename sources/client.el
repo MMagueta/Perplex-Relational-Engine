@@ -15,7 +15,7 @@
     (process-send-string connection content)))
 
 (setq default-create-relation "CREATE RELATION Person (Name VARCHAR(10) Age INTEGER)")
-(setq default-insert "INSERT Person (Name VARCHAR(10) \"Marcos\" Age INTEGER 24)")
+(setq default-insert "INSERT Person (Name VARCHAR(10) \"Marc\" Age INTEGER 25)")
 
 (perplex-client default-create-relation)
 (perplex-client default-insert)

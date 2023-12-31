@@ -5,9 +5,8 @@ module Main =
     open Runner
                 
     let schema = Schema.loadFromDisk()
-    
-    [<EntryPoint>]
-    let main _ =
+        
+    let testEffects _ =
         let logger = 
             match Configuration.Builder.loadConfiguration() with
             | Ok config -> config.Logger
@@ -62,4 +61,10 @@ module Main =
                 | _ -> ()
             | _ -> ()
 
+        0
+
+    [<EntryPoint>]
+    let testPager _ =
+        IO.Read.search schema "Person" 25
+        |> printfn "%A"
         0

@@ -432,6 +432,13 @@ extern void find_and_print(node * const root, int key, bool verbose) {
 				r, key, r->value);
 }
 
+extern int find_and_get_value(node * const root, int key, bool verbose) {
+    node * leaf = NULL;
+    record * r = find(root, key, verbose, NULL);
+    if (r == NULL) return -1;
+    else return r->value;
+}
+
 
 /* Finds and prints the keys, pointers, and values within a range
  * of keys between key_start and key_end, including both bounds.
@@ -520,7 +527,6 @@ extern node * find_leaf(node * const root, int key, bool verbose) {
 	}
 	return c;
 }
-
 
 /* Finds and returns the record to which
  * a key refers.

@@ -23,6 +23,7 @@ end
 
 [<RequireQualifiedAccess>]
 module Value = begin
+    open System
     [<DataContract>]
     type t =
         | VInteger32 of int32
@@ -36,7 +37,7 @@ module Value = begin
                 else failwithf "Int32 expects bytes of size 4, got: %d" stream.Length
             | Type.TVariableString size ->
                 if stream.Length = size then
-                    VVariableString (System.BitConverter.ToString stream)
+                    VVariableString (Text.Encoding.UTF8.GetString stream)
                 else failwithf "String(%d) received the wrong size: %d" size stream.Length
 end
 

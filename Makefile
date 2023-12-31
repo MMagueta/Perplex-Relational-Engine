@@ -10,3 +10,8 @@ build:
 
 disk:
 	dotnet run --project src/Disk
+executor:
+	dotnet run --project src/Executor
+server:
+	dotnet run --project src/Server
+
