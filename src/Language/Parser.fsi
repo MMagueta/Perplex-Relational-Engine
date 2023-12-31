@@ -4,6 +4,10 @@ type token =
   | RIGHT_LIM
   | LEFT_LIM
   | EOF
+  | NOT
+  | EQUAL
+  | SELECT
+  | PROJECT
   | INSERT
   | RELATION
   | CREATE
@@ -15,6 +19,10 @@ type tokenId =
     | TOKEN_RIGHT_LIM
     | TOKEN_LEFT_LIM
     | TOKEN_EOF
+    | TOKEN_NOT
+    | TOKEN_EQUAL
+    | TOKEN_SELECT
+    | TOKEN_PROJECT
     | TOKEN_INSERT
     | TOKEN_RELATION
     | TOKEN_CREATE

@@ -65,6 +65,6 @@ module Main =
 
     [<EntryPoint>]
     let testPager _ =
-        IO.Read.search schema "Person" 25
+        IO.Read.search schema "Person" (Language.Expression.ProjectionParameter.Restrict ["Name"]) ("Age", 25)
         |> printfn "%A"
         0

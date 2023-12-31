@@ -5,10 +5,9 @@ open System.Net.Sockets
 open System.Text
 
 open Configuration
-open Language
 
 let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
-    let request = Encoding.ASCII.GetString(buffer, 0, bytesReceived)
+    let request = Encoding.UTF8.GetString(buffer, 0, bytesReceived)
     let ast = PerplexDB.Language.Main.generateAST(request)
     let mutable response = "For now there is no response apart from success."
     try
@@ -17,12 +16,15 @@ let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
         | Executor.Runner.Effect (kind, newSchema) -> 
             logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
             Ok (newSchema, "Response, but for now there is nothing useful here.")
+        | Executor.Runner.Projection result ->
+            logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
+            Ok (schema, result.ToString())
     with ex ->
         logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
         Error $"Failed: {ex.Message}";
 
 let finishHandler (handler: Socket) (response: string) =
-    let responseBuffer = Encoding.ASCII.GetBytes(response)
+    let responseBuffer = Encoding.UTF8.GetBytes(response)
     handler.Send(responseBuffer) |> ignore
     handler.Shutdown(SocketShutdown.Both)
     handler.Close()
@@ -57,7 +59,7 @@ let start () =
             listen (Executor.Main.schema)
 
         with ex ->
-            logger.ForContext("ExecutionContext", "Runner").Information(ex.Message)
+            logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
     | Error err ->
         failwith err
 

@@ -160,24 +160,28 @@ module Read = begin
      // print_leaves(tree)
      ()
 
-  let search (schema: Schema.t) (entityName: string) predicate = //: ColumnMap =
+  let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) ((keyName, key): string * int) = //: ColumnMap =
       match Map.tryFind entityName schema with
       | Some (Entity.Relation (relationAttributes, physicalCount)) ->
           
           let initialPageNumber = 0
           let mutable amountAlreadyRead = 0
           
-          let lastReadChunk = buildPagination schema entityName relationAttributes "Age" initialPageNumber amountAlreadyRead
+          let lastReadChunk = buildPagination schema entityName relationAttributes keyName initialPageNumber amountAlreadyRead
           printfn "Leaves: %A" lastReadChunk.pages
           Tree.print_leaves lastReadChunk.tree
           amountAlreadyRead <- lastReadChunk.amountAlreadyRead
 
-          match Tree.find_and_get_value (lastReadChunk.tree, predicate, false) with
-          | -1 -> None
-          | offset ->
-              lastReadChunk.pages.[0].instances.[offset]
-              |> deserialize schema entityName
-              |> Some
+          match projectionParam with
+          | Expression.ProjectionParameter.All -> None
+          | Expression.ProjectionParameter.Restrict attributes ->
+              match Tree.find_and_get_value (lastReadChunk.tree, key, false) with
+              | -1 -> None
+              | offset ->
+                  lastReadChunk.pages.[0].instances.[offset]
+                  |> deserialize schema entityName
+                  |> Map.filter (fun k _ -> List.contains k attributes)
+                  |> Some
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
 

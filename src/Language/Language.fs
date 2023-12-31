@@ -66,9 +66,14 @@ module Expression = begin
           FieldType: Type.t
           FieldValue: Value.t }
 
+    type ProjectionParameter =
+        | All
+        | Restrict of string list
+
     type t =
         | Insert of Name: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
+        | Project of Relation: string * Attributes: string list
 end
 
 [<RequireQualifiedAccess>]

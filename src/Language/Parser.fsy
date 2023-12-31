@@ -13,6 +13,10 @@ open Language
 %token CREATE
 %token RELATION
 %token INSERT
+%token PROJECT
+%token SELECT
+%token EQUAL
+%token NOT
 
 // Misc tokens
 %token EOF
@@ -38,6 +42,8 @@ File:
 Statement:
 	| CREATE RELATION IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM 
 	    { Expression.CreateRelation ($3, Map.ofList $5) }
+        | PROJECT LEFT_LIM ListAttributes RIGHT_LIM IDENTIFIER
+            { Expression.Project ($5, List.map (fun ((identifier: string), _type') -> identifier) $3) }
 	| INSERT IDENTIFIER LEFT_LIM ListValues RIGHT_LIM
 	    { Expression.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: Expression.InsertFieldInfo) $4 |> Array.ofList) }
 

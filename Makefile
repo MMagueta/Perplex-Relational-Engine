@@ -12,4 +12,6 @@ executor:
 	dotnet run --project src/Executor
 server:
 	dotnet run --project src/Server
+language:
+	dotnet run --project src/Language
 

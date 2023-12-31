@@ -27,13 +27,17 @@ let type' = ("INTEGER"|"VARCHAR")
 
 rule tokenStream = parse
 // --------------------------
-| "CREATE"   { Parser.CREATE }
-| "RELATION" { Parser.RELATION }
-| "INSERT"   { Parser.INSERT }
-| type' { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
-| identifier		 { Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
-| integer    { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
-| '"'        { read_string "" false lexbuf } 
+| "CREATE"      { Parser.CREATE }
+| "RELATION"    { Parser.RELATION }
+| "INSERT"      { Parser.INSERT }
+| "PROJECT"     { Parser.PROJECT }
+| "SELECT"      { Parser.SELECT }
+| ('='|"EQUAL") { Parser.EQUAL }
+| ("NOT")       { Parser.NOT }
+| type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
+| identifier	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
+| integer       { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
+| '"'           { read_string "" false lexbuf } 
 // --------------------------
 | whitespace { tokenStream lexbuf }
 | newline	 { newline lexbuf; tokenStream lexbuf }
