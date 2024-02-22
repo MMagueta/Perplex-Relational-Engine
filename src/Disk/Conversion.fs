@@ -93,45 +93,58 @@ module Read = begin
         in reconstruct_columns [] stream columns |> Map.ofList
     | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
 
+
   [<RequireQualifiedAccessAttribute>]
   module Tree =
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       extern void print_leaves(void* _tree);
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern void* insert(void* _tree, int _key, int _value)
+      extern void* insert(void* _tree, int _key, int _chunkNumber, int _pageNumber, int _slotNumber)
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       extern void find_and_print(void * _tree, int _key, bool _verbose)
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern int find_and_get_value(void * _tree, int _key, bool _verbose)  
+      extern void* find_and_get_value(void * _tree, int _key, bool _verbose)
   
+  type ChunkNumber = int
+  type PageNumber = int
+  type InstanceNumber = int
+  type Index =
+      { key: int (* should be generic, int for now *)
+        chunkNumber: ChunkNumber
+        pageNumber: PageNumber
+        slotNumber: InstanceNumber
+        entity: ColumnMap }
   [<Struct>]
   type Page = 
-      { instances: byte array array
-        indexes: (int * int) array } // For now, maps a int key to a array position
+      { instances: ColumnMap array //byte array array
+        indexes: Index array }
 
-  let buildPages initialPageNumber instancesPerPage pageBound (reader: IO.FileStream) instanceSize amountAlreadyRead attributeToIndex schema entityName (relationToIndex: Map<string,Entity.FieldMetadata>) =
+  let buildPages instancesPerPage (reader: IO.FileStream) instanceSize amountAlreadyRead chunkNumber attributeToIndex schema entityName (relationToIndex: Map<string,Entity.FieldMetadata>) =
       let mutable buffer = [|for _ in 1..8_000 do 0uy|]
-      let mutable amountAlreadyRead = amountAlreadyRead
+      let amountAlreadyRead = amountAlreadyRead
+      let amountToRead =
+          if instancesPerPage * instanceSize > ((reader.Length |> int32) - amountAlreadyRead)
+          then ((reader.Length |> int32) - amountAlreadyRead)
+          else instancesPerPage * instanceSize
+      reader.Read(buffer, chunkNumber*instanceSize, amountToRead) |> ignore
       let pages =
-        [| for pageNumber in initialPageNumber..instancesPerPage..pageBound do
-            let amountToRead =
-                if instancesPerPage * instanceSize > ((reader.Length |> int32) - amountAlreadyRead)
-                then ((reader.Length |> int32) - amountAlreadyRead)
-                else instancesPerPage * instanceSize
-            amountAlreadyRead <- amountAlreadyRead + amountToRead
-            reader.Read(buffer, pageNumber*instanceSize, amountToRead) |> ignore
-            let instances = buffer |> Array.chunkBySize instanceSize |> Array.take pageBound
-            let indexes =
-                instances
-                |> Array.mapi (fun i stream ->
-                    Map.tryFind attributeToIndex (deserialize schema entityName stream)
-                    |> function Some (Value.VInteger32 value) -> (value, i)
-                              | Some _ -> failwithf "Currently, indexes on '%A' are not supported. Halting pagination." relationToIndex.[attributeToIndex].type'
-                              | None -> failwithf "Attribute '%A' could not be found. Halting pagination." attributeToIndex)
-            yield { instances = instances
-                    indexes = indexes }
-          done |]
-      pages, amountAlreadyRead
+          buffer
+          |> Array.chunkBySize instanceSize
+          |> Array.chunkBySize instancesPerPage
+          |> Array.mapi (fun pageNumber instances ->
+                         let indexing =
+                             instances
+                             |> Array.mapi
+                                 (fun i stream ->
+                                      let columns = deserialize schema entityName stream
+                                      Map.tryFind attributeToIndex columns
+                                      |> function
+                                         | Some (Value.VInteger32 key) -> { key = key; chunkNumber = chunkNumber; pageNumber = pageNumber; slotNumber = i; entity = columns }
+                                         | Some _ -> failwithf "Currently, indexes on '%A' are not supported. Halting pagination." relationToIndex.[attributeToIndex].type'
+                                         | None -> failwithf "Attribute '%A' could not be found. Halting pagination." attributeToIndex)
+                         { instances = Array.map (_.entity) indexing
+                           indexes = indexing })
+      pages, amountAlreadyRead + amountToRead
       
   type Pagination =
       { pages: Page array; tree: nativeint; amountAlreadyRead: int }
@@ -141,28 +154,25 @@ module Read = begin
       let instancesPerPage: int32 = 8_000 / instanceSize
       use reader = System.IO.File.OpenRead $"/tmp/perplexdb/{entityName}.ndf"
       reader.Seek (0, System.IO.SeekOrigin.Begin) |> ignore
-      let maxPagesAtOnce = 64
-      let pages, amountAlreadyRead = buildPages initialPageNumber instancesPerPage maxPagesAtOnce (reader: IO.FileStream) instanceSize amountAlreadyRead attributeToIndex schema entityName relationToIndex
-      let tree = Array.fold (fun tree elem -> Array.fold (fun tree (key, offset) -> Tree.insert(tree, key, offset)) tree elem.indexes) IntPtr.Zero pages
+      // let maxPagesAtOnce = 64
+      let pages, amountAlreadyRead = buildPages instancesPerPage reader instanceSize amountAlreadyRead 1 attributeToIndex schema entityName relationToIndex
+      let tree = Array.fold (fun tree page ->
+                               Array.fold (fun tree { key = key
+                                                      chunkNumber = chunkNumber
+                                                      pageNumber = pageNumber
+                                                      slotNumber = slotNumber} ->
+                                             Tree.insert(tree, key, chunkNumber, pageNumber, slotNumber)) tree page.indexes) IntPtr.Zero pages
       { pages = pages; tree = tree; amountAlreadyRead = amountAlreadyRead }
 
-  let searchOntologicalKey () = // (entityToLoad: string) (key: Value.t) =
-     // let tree = insert(IntPtr.Zero, 1, 10)
-     // let tree = insert(tree, 1, 10)
-     // let tree = insert(tree, 2, 11)
-     // let tree = insert(tree, 3, 12)
-     // let tree = insert(tree, 4, 13)
-     // let tree = insert(tree, 7, 17)
-     // let tree = insert(tree, 6, 23)
-     // let tree = insert(tree, 10, 73)
-     // let tree = insert(tree, 5, 39)
-     // let tree = insert(tree, 11, 12)
-     // print_leaves(tree)
-     ()
+  [<Struct>]
+  type CRecord =
+      { chunkNumber: int
+        pageNumber: int
+        slotNumber: int }
 
-  let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) ((keyName, key): string * int) = //: ColumnMap =
+  let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) ((keyName, key): string * int) =
       match Map.tryFind entityName schema with
-      | Some (Entity.Relation (relationAttributes, physicalCount)) ->
+      | Some (Entity.Relation (relationAttributes, _physicalCount)) ->
           
           let initialPageNumber = 0
           let mutable amountAlreadyRead = 0
@@ -175,18 +185,18 @@ module Read = begin
           match projectionParam with
           | Expression.ProjectionParameter.All -> None
           | Expression.ProjectionParameter.Restrict attributes ->
-              match Tree.find_and_get_value (lastReadChunk.tree, key, false) with
-              | -1 -> None
-              | offset ->
-                  lastReadChunk.pages.[0].instances.[offset]
-                  |> deserialize schema entityName
-                  |> Map.filter (fun k _ -> List.contains k attributes)
-                  |> Some
+              let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
+              let crecord =
+                  Microsoft.FSharp.NativeInterop.NativePtr.read
+                      (Microsoft.FSharp.NativeInterop.NativePtr.ofNativeInt<CRecord> value)
+              printfn "%A" <| crecord
+              None
+              // | -1 -> None
+              // | identifierInPage ->
+                  // lastReadChunk
+                  // |> Map.filter (fun k _ -> List.contains k attributes)
+                  // |> Some
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
 
-  [<EntryPoint>]
-  let main _ =
-      searchOntologicalKey()
-      0
 end

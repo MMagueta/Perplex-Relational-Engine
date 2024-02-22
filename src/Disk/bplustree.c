@@ -86,7 +86,9 @@
  * of the value field.
  */
 typedef struct record {
-	int value;
+  int chunkNumber;
+  int pageNumber;
+  int slotNumber;
 } record;
 
 /* Type representing a node in the B+ tree.
@@ -179,7 +181,7 @@ int cut(int length);
 
 // Insertion.
 
-record * make_record(int value);
+record * make_record(int chunkNumber, int pageNumber, int slotNumber);
 node * make_node(void);
 node * make_leaf(void);
 int get_left_index(node * parent, node * left);
@@ -194,7 +196,7 @@ node * insert_into_node_after_splitting(node * root, node * parent,
 node * insert_into_parent(node * root, node * left, int key, node * right);
 node * insert_into_new_root(node * left, int key, node * right);
 node * start_new_tree(int key, record * pointer);
-node * insert(node * root, int key, int value);
+node * insert(node * root, int key, int chunkNumber, int pageNumber, int slotNumber);
 
 // Deletion.
 
@@ -428,15 +430,16 @@ extern void find_and_print(node * const root, int key, bool verbose) {
 	if (r == NULL)
 		printf("Record not found under key %d.\n", key);
 	else 
-		printf("Record at %p -- key %d, value %d.\n",
-				r, key, r->value);
+		printf("Record at %p -- key %d, chunkNumber: %d, pageNumber: %d, slotNumber: %d.\n",
+		       r, key, r->chunkNumber, r->pageNumber, r->slotNumber);
 }
 
-extern int find_and_get_value(node * const root, int key, bool verbose) {
+extern /*int*/ record * find_and_get_value(node * const root, int key, bool verbose) {
     node * leaf = NULL;
     record * r = find(root, key, verbose, NULL);
-    if (r == NULL) return -1;
-    else return r->value;
+    return r;
+    /* if (r == NULL) return -1; */
+    /* else return r->value; */
 }
 
 
@@ -454,12 +457,16 @@ void find_and_print_range(node * const root, int key_start, int key_end,
 	if (!num_found)
 		printf("None found.\n");
 	else {
-		for (i = 0; i < num_found; i++)
-			printf("Key: %d   Location: %p  Value: %d\n",
-					returned_keys[i],
-					returned_pointers[i],
-					((record *)
-					 returned_pointers[i])->value);
+	  for (i = 0; i < num_found; i++)
+	    printf("Key: %d Location: %p ChunkNumber: %d PageNumber: %d SlotNumber: %d \n",
+		   returned_keys[i],
+		   returned_pointers[i],
+		   ((record *)
+		    returned_pointers[i])->chunkNumber,
+		   ((record *)
+		    returned_pointers[i])->pageNumber,
+		   ((record *)
+		    returned_pointers[i])->slotNumber);
 	}
 }
 
@@ -577,14 +584,16 @@ int cut(int length) {
 /* Creates a new record to hold the value
  * to which a key refers.
  */
-record * make_record(int value) {
+record * make_record(int chunkNumber, int pageNumber, int slotNumber) {
 	record * new_record = (record *)malloc(sizeof(record));
 	if (new_record == NULL) {
 		perror("Record creation.");
 		exit(EXIT_FAILURE);
 	}
 	else {
-		new_record->value = value;
+	  new_record->chunkNumber = chunkNumber;
+	  new_record->pageNumber = pageNumber;
+	  new_record->slotNumber = slotNumber;
 	}
 	return new_record;
 }
@@ -919,7 +928,7 @@ node * start_new_tree(int key, record * pointer) {
  * however necessary to maintain the B+ tree
  * properties.
  */
-extern node * insert(node * root, int key, int value) {
+extern node * insert(node * root, int key, int chunkNumber, int pageNumber, int slotNumber) {
 
 	record * record_pointer = NULL;
 	node * leaf = NULL;
@@ -931,18 +940,20 @@ extern node * insert(node * root, int key, int value) {
 	record_pointer = find(root, key, false, NULL);
     if (record_pointer != NULL) {
 
-        /* If the key already exists in this tree, update
-         * the value and return the tree.
-         */
+      /* If the key already exists in this tree, update
+       * the value and return the tree.
+       */
 
-        record_pointer->value = value;
-        return root;
+      record_pointer->chunkNumber = chunkNumber;
+      record_pointer->pageNumber = pageNumber;
+      record_pointer->slotNumber = slotNumber;
+      return root;
     }
 
 	/* Create a new record for the
 	 * value.
 	 */
-	record_pointer = make_record(value);
+	record_pointer = make_record(chunkNumber, pageNumber, slotNumber);
 
 
 	/* Case: the tree does not exist yet.
@@ -1359,115 +1370,4 @@ void destroy_tree_nodes(node * root) {
 node * destroy_tree(node * root) {
 	destroy_tree_nodes(root);
 	return NULL;
-}
-
-
-// MAIN
-
-int main(int argc, char ** argv) {
-
-	char * input_file;
-	FILE * fp;
-	node * root;
-	int input_key, input_key_2;
-	char instruction;
-
-	root = NULL;
-	verbose_output = false;
-
-	if (argc > 1) {
-		order = atoi(argv[1]);
-		if (order < MIN_ORDER || order > MAX_ORDER) {
-			fprintf(stderr, "Invalid order: %d .\n\n", order);
-			usage_3();
-			exit(EXIT_FAILURE);
-		}
-	}
-
-    if (argc < 3) {
-        license_notice();
-        usage_1();  
-        usage_2();
-    }
-
-	if (argc > 2) {
-		input_file = argv[2];
-		fp = fopen(input_file, "r");
-		if (fp == NULL) {
-			perror("Failure to open input file.");
-			exit(EXIT_FAILURE);
-		}
-		while (!feof(fp)) {
-			fscanf(fp, "%d\n", &input_key);
-			root = insert(root, input_key, input_key);
-		}
-		fclose(fp);
-		print_tree(root);
-        return EXIT_SUCCESS;
-	}
-
-	printf("> ");
-    char buffer[BUFFER_SIZE];
-    int count = 0;
-    bool line_consumed = false;
-	while (scanf("%c", &instruction) != EOF) {
-        line_consumed = false;
-		switch (instruction) {
-		case 'd':
-			scanf("%d", &input_key);
-			root = delete(root, input_key);
-			print_tree(root);
-			break;
-		case 'i':
-            fgets(buffer, BUFFER_SIZE, stdin);
-            line_consumed = true;
-            count = sscanf(buffer, "%d %d", &input_key, &input_key_2);
-            if (count == 1)
-              input_key_2 = input_key;
-			root = insert(root, input_key, input_key_2);
-			print_tree(root);
-			break;
-		case 'f':
-		case 'p':
-			scanf("%d", &input_key);
-			find_and_print(root, input_key, instruction == 'p');
-			break;
-		case 'r':
-			scanf("%d %d", &input_key, &input_key_2);
-			if (input_key > input_key_2) {
-				int tmp = input_key_2;
-				input_key_2 = input_key;
-				input_key = tmp;
-			}
-			find_and_print_range(root, input_key, input_key_2, instruction == 'p');
-			break;
-		case 'l':
-			print_leaves(root);
-			break;
-		case 'q':
-			while (getchar() != (int)'\n');
-			return EXIT_SUCCESS;
-			break;
-		case 't':
-			print_tree(root);
-			break;
-		case 'v':
-			verbose_output = !verbose_output;
-			break;
-		case 'x':
-			if (root)
-				root = destroy_tree(root);
-			print_tree(root);
-			break;
-		default:
-			usage_2();
-			break;
-		}
-        if (!line_consumed)
-           while (getchar() != (int)'\n');
-		printf("> ");
-	}
-	printf("\n");
-
-	return EXIT_SUCCESS;
 }
