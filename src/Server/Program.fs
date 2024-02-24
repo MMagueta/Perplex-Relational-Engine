@@ -10,18 +10,18 @@ let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
     let request = Encoding.UTF8.GetString(buffer, 0, bytesReceived)
     let ast = PerplexDB.Language.Main.generateAST(request)
     let mutable response = "For now there is no response apart from success."
-    try
-        let result = Executor.Runner.execute logger ast.Value schema
-        match result with
-        | Executor.Runner.Effect (kind, newSchema) -> 
-            logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
-            Ok (newSchema, "Response, but for now there is nothing useful here.")
-        | Executor.Runner.Projection result ->
-            logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-            Ok (schema, result.ToString())
-    with ex ->
-        logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
-        Error $"Failed: {ex.Message}";
+    // try
+    let result = Executor.Runner.execute logger ast.Value schema
+    match result with
+    | Executor.Runner.Effect (kind, newSchema) -> 
+        logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
+        Ok (newSchema, "Response, but for now there is nothing useful here.")
+    | Executor.Runner.Projection result ->
+        logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
+        Ok (schema, result.ToString())
+    // with ex ->
+        // logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
+        // Error $"Failed: {ex.Message}";
 
 let finishHandler (handler: Socket) (response: string) =
     let responseBuffer = Encoding.UTF8.GetBytes(response)
@@ -35,31 +35,31 @@ let start () =
     | Ok config ->
         let logger = config.Logger
         use listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
-        try
-            logger.ForContext("ExecutionContext", "Server").Information($"Running at {IPAddress.Any}:4000")
+        // try
+        logger.ForContext("ExecutionContext", "Server").Information($"Running at {IPAddress.Any}:4000")
             
-            listener.Bind(new IPEndPoint(IPAddress.Any, 4000))
-            listener.Listen(10)
+        listener.Bind(new IPEndPoint(IPAddress.Any, 4000))
+        listener.Listen(10)
 
-            let rec listen schema =
-                logger.ForContext("ExecutionContext", "Runner").Information("Waiting for a connection...")
-                
-                let handler = listener.Accept()
-                let buffer = [| for _ in 1..1024 do 0uy |]
-                let bytesReceived = handler.Receive(buffer)
+        let rec listen schema =
+            logger.ForContext("ExecutionContext", "Runner").Information("Waiting for a connection...")
+            
+            let handler = listener.Accept()
+            let buffer = [| for _ in 1..1024 do 0uy |]
+            let bytesReceived = handler.Receive(buffer)
 
-                match handle logger schema buffer bytesReceived with
-                | Ok (newSchema, response) ->
-                    finishHandler handler response
-                    listen newSchema
-                | Error response ->
-                    finishHandler handler response
-                    listen schema
+            match handle logger schema buffer bytesReceived with
+            | Ok (newSchema, response) ->
+                finishHandler handler response
+                listen newSchema
+            | Error response ->
+                finishHandler handler response
+                listen schema
 
-            listen (Executor.Main.schema)
+        listen (Executor.Main.schema)
 
-        with ex ->
-            logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
+        // with ex ->
+            // logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
     | Error err ->
         failwith err
 

@@ -96,7 +96,18 @@ module Runner =
 
             Effect("CREATED RELATION", updatedSchema)
         | Expression.Project(relationName, attributesToProject) when (Map.tryFind relationName schema).IsSome ->
-            let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict attributesToProject) ("Age", 25)
+            // let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict attributesToProject) ("Age", 23)
+            let indexBuilder: IO.Read.IndexBuilder =
+                fun chunkNumber pageNumber instanceNumber columns ->
+                    match Map.tryFind "Age" columns with
+                    | Some (Value.VInteger32 v) ->
+                        { entity = columns
+                          key = v
+                          chunkNumber = chunkNumber
+                          pageNumber = pageNumber
+                          slotNumber = instanceNumber }
+                    | _ -> failwith ""
+            let search = IO.Read.search schema relationName Language.Expression.ProjectionParameter.All (Some 25) indexBuilder
             match search with
             | Some result ->
                 printfn "%A" (Map.toArray result)

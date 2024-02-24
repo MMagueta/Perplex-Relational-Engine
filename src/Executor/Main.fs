@@ -65,6 +65,17 @@ module Main =
 
     [<EntryPoint>]
     let testPager _ =
-        IO.Read.search schema "Person" (Language.Expression.ProjectionParameter.Restrict ["Name"]) ("Age", 25)
+        let indexBuilder: IO.Read.IndexBuilder =
+            fun chunkNumber pageNumber instanceNumber columns ->
+                match Map.tryFind "Age" columns with
+                | Some (Value.VInteger32 v) ->
+                    { entity = columns
+                      key = v
+                      chunkNumber = chunkNumber
+                      pageNumber = pageNumber
+                      slotNumber = instanceNumber }
+                | _ -> failwith ""
+
+        IO.Read.search schema "Person" (Language.Expression.ProjectionParameter.Restrict ["Name"]) (Some 25)
         |> printfn "%A"
         0
