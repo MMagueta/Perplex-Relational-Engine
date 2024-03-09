@@ -67,7 +67,7 @@ let rec performer logger (handler: Socket) = async {
             else finishHandler handler "Failed to acquire read lock."
         | Some _ -> finishHandler handler "Requires to acquire a lock. Please use LOCK (READ|WRITE) before the query expression."
         | None -> finishHandler handler "Nothing to do."
-    with ex -> logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
+    with ex -> logger.ForContext("ExecutionContext", "Runner").ForContext("StackTrace", ex.StackTrace).Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
     return ()
 }
 
@@ -89,7 +89,7 @@ let start () =
                 let handler = listener.Accept()
                 Async.Start(performer logger handler)
             with ex ->
-                logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
+                logger.ForContext("ExecutionContext", "Runner").ForContext("StackTrace", ex.StackTrace).Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
             listen ()
         listen ()
 

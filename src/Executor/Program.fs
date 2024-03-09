@@ -137,24 +137,44 @@ module Runner =
                     Projection result
                 | None -> stream.Dispose()
                           Projection [||]
-                
 
+                
         | Expression.Update(relationName, attributeToUpdate, refinement) when (Map.tryFind relationName schema).IsSome ->
-            let stream = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
             match stream with
-            | Ok stream ->
+            | Some stream ->
                 let (Minus attributeEvaluation) = execute (Some stream) logger attributeToUpdate.FieldValue schema
                 let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                 printfn "ATTR: %A" attributeEvaluation
                 printfn "REF: %A" refinementEvaluation
                 let refinementEvaluation =
                     Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
-                
-                IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
-                |> ignore
-                stream.Dispose()
+                // BUG: Stream is closing on updates, but it should not be SOME since the start
+                if stream.CanWrite then
+                    IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
+                    |> ignore
+                else 
+                    stream.Dispose()
+                    let (Ok stream) = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
+                    IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
+                    |> ignore
+                    stream.Dispose()
                 Update
-            | Error _ -> failwithf "Failed to acquire lock for updating relation '%s'" relationName
+            | None ->
+                let stream = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
+                match stream with
+                | Ok stream ->
+                    let (Minus attributeEvaluation) = execute (Some stream) logger attributeToUpdate.FieldValue schema
+                    let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+                    printfn "ATTR: %A" attributeEvaluation
+                    printfn "REF: %A" refinementEvaluation
+                    let refinementEvaluation =
+                        Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
+                    
+                    IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
+                    |> ignore
+                    stream.Dispose()
+                    Update
+                | Error _ -> failwithf "Failed to acquire lock for updating relation '%s'" relationName
 
         | Expression.Minus(left, right) ->
             let leftEval = execute stream logger left schema
