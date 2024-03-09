@@ -20,6 +20,15 @@ module Main =
         generateAST "PROJECT (Name VARCHAR(10)) Person"
         |> printfn "%A"
 
+        generateAST "PROJECT SUM(Age INTEGER) Person"
+        |> printfn "%A"
+
+        generateAST "PROJECT ALL Person"
+        |> printfn "%A"
+
+        generateAST "UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1) SELECT AccountNumber = 1"
+        |> printfn "%A"
+
         if argv.Length > 0 then
             Array.map (System.IO.File.ReadAllText >> generateAST) argv |> printfn "%A"
         else

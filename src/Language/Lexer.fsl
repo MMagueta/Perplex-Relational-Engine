@@ -30,9 +30,14 @@ rule tokenStream = parse
 | "CREATE"      { Parser.CREATE }
 | "RELATION"    { Parser.RELATION }
 | "INSERT"      { Parser.INSERT }
+| "UPDATE"      { Parser.UPDATE }
 | "PROJECT"     { Parser.PROJECT }
 | "SELECT"      { Parser.SELECT }
+| "SUM"         { Parser.SUM }
+| "SET"         { Parser.SET }
+| "ALL"         { Parser.ALL }
 | ('='|"EQUAL") { Parser.EQUAL }
+| ('-'|"MINUS") { Parser.MINUS }
 | ("NOT")       { Parser.NOT }
 | type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
 | identifier	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }

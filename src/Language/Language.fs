@@ -39,6 +39,19 @@ module Value = begin
                 if stream.Length = size then
                     VVariableString (Text.Encoding.UTF8.GetString stream)
                 else failwithf "String(%d) received the wrong size: %d" size stream.Length
+         member this.Serialize(): string * obj =
+            match this with
+            | VInteger32 v ->
+                ( "VInteger32", v)
+            | VVariableString v ->
+                ( "VVariableString", v)
+         static Deserialize((name, value): string * obj): t =
+            match name with
+            | "VInteger32" ->
+                VInteger32 (value :?> int32)
+            | "VVariableString" ->
+                VVariableString (value :?> string)
+            | otherwise -> failwithf "Unexpected type casting: %s" otherwise
 end
 
 [<RequireQualifiedAccess>]
@@ -69,11 +82,22 @@ module Expression = begin
     type ProjectionParameter =
         | All
         | Restrict of string list
+        | Sum of string
+
+    type Operators =
+        | Equal of string * int
 
     type t =
-        | Insert of Name: string * Fields: InsertFieldInfo array
+        | Minus of t * t
+        | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
-        | Project of Relation: string * Attributes: string list
+        | CreateConstraint of Name: string
+        | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option
+        | Project of Relation: string * Attributes: ProjectionParameter * Refinement: Operators option
+    and UpdateFieldInfo =
+        { FieldName: string
+          FieldType: Type.t
+          FieldValue: t }
 end
 
 [<RequireQualifiedAccess>]
