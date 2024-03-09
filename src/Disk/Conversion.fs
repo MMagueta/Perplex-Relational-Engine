@@ -45,15 +45,27 @@ module Write = begin
   module Disk = begin
     open System
     open System.IO
-    
-    let writeFact (schema: Schema.t) (relationName: string) position (fact: Fact): unit =
+
+    let rec lockedStream path attempts =
+        if attempts > 0 then
+            let mutable stream: System.IO.FileStream = null
+            try stream <- new System.IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.ReadWrite, IO.FileShare.Inheritable); Ok stream
+            with :? IOException ->
+                if isNull stream then Async.Sleep 10 |> Async.RunSynchronously; lockedStream path (attempts - 1)
+                else Error ""
+         else Error ""
+
+    // Stream needs to live through the scope of the callee for now
+    let writeFact stream (schema: Schema.t) (relationName: string) position (fact: Fact): unit =
         match Map.tryFind relationName schema with
         | Some (Entity.Relation (relationAttributes, physicalOffset)) ->
             let content = convertFact schema relationName fact
             let relationDefinitionSize = Schema.relationSize relationAttributes in
-            let path = "/tmp/perplexdb/" + relationName + ".ndf" in
-            use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate) in
-            use binaryStream = new IO.BinaryWriter(stream) in
+            // let path = "/tmp/perplexdb/" + relationName + ".ndf" in
+            // Stuck with FileShare because of Lock being not available for mac
+            // Replace this later with regional locking instead, right now locks the whole file
+            // use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.Write, IO.FileShare.Read) in
+            let binaryStream = new IO.BinaryWriter(stream) in
             // logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
             let offset =
                 match position with
@@ -61,9 +73,11 @@ module Write = begin
                 | Some offset -> offset
             let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
             // Fill with blanks
-            binaryStream.Write [| for _ in 0..(relationDefinitionSize - 1) do 0uy |]
+            binaryStream.Write [| for _ in 1..relationDefinitionSize do 0uy |]
             let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
             binaryStream.Write content
+            binaryStream.Flush()
+            binaryStream.Dispose()
         | _ -> ()
 
   end  
@@ -136,6 +150,7 @@ module Read = begin
       reader.Read(buffer, chunkNumber*instanceSize, amountToRead) |> ignore
       let pages =
           buffer
+          |> fun x -> printfn "BYTE CHUNK: %A" x; x
           |> Array.chunkBySize instanceSize
           |> Array.chunkBySize instancesPerPage
           |> Array.chunkBySize instancesPerPage
@@ -150,22 +165,20 @@ module Read = begin
                                         |> indexBuilder (chunkNumber*instanceSize+(slotNumber * instanceSize)) chunkNumber pageNumber slotNumber
                                         |> Some
                                     with e -> printfn "ERROR: %A" e.Message; None)
-                              |> Array.choose id
-                                          )
-                           
-                         )
+                              |> Array.choose id))
       pages, amountAlreadyRead + amountToRead
 
   type Pagination =
       { pages: Page array; tree: nativeint; amountAlreadyRead: int }
   
-  let buildPagination schema entityName (relationToIndex: Map<string, Entity.FieldMetadata>) (indexBuilder: IndexBuilder) initialPageNumber amountAlreadyRead =
+  let buildPagination (reader: System.IO.FileStream) schema entityName (relationToIndex: Map<string, Entity.FieldMetadata>) (indexBuilder: IndexBuilder) initialPageNumber amountAlreadyRead =
       let instanceSize = Schema.relationSize relationToIndex
       let instancesPerPage: int32 = 100_000 / instanceSize
-      use reader = System.IO.File.OpenRead $"/tmp/perplexdb/{entityName}.ndf"
+      // use reader = System.IO.File.OpenRead $"/tmp/perplexdb/{entityName}.ndf"
       reader.Seek (0, System.IO.SeekOrigin.Begin) |> ignore
       // let maxPagesAtOnce = 64
       let pages, amountAlreadyRead = buildPages instancesPerPage reader instanceSize amountAlreadyRead 0 indexBuilder schema entityName relationToIndex
+      printfn "PAGES: %A" pages
       let tree = Array.fold (fun tree chunk ->
                              Array.fold (fun tree page ->
                                Array.fold (fun tree { key = key
@@ -181,19 +194,20 @@ module Read = begin
         pageNumber: int
         slotNumber: int }
 
-  let update (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) =
+  let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) =
       projection
       |> Array.map (fun (x, (offset: OffsetNumber option)) ->
                     Map.change
                         attributeToUpdate
                         (function
                            | (Some (Value.VInteger32 _)) ->
-                               Some (Value.VInteger32 valueReplace))
+                               Some (Value.VInteger32 valueReplace)
+                           | otherwise -> failwithf "Updating '%A' is currently not supported." otherwise)
                         x
                     |> fun x -> (x, offset))
-      |> Array.map (fun (x, offset) -> Write.Disk.writeFact schema relationName offset x)
+      |> Array.map (fun (x, offset) -> Write.Disk.writeFact stream schema relationName offset x)
 
-  let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
+  let search stream (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
       match Map.tryFind entityName schema with
       | Some (Entity.Relation (relationAttributes, _physicalCount)) ->
           
@@ -208,7 +222,7 @@ module Read = begin
           | Expression.ProjectionParameter.Restrict attributes, None ->
               None
           | Expression.ProjectionParameter.Restrict _, Some (Expression.Operators.Equal (attr, key)) ->
-              let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
               amountAlreadyRead <- lastReadChunk.amountAlreadyRead
               let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
               let crecord =
@@ -217,7 +231,7 @@ module Read = begin
               printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
               None
           | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
-              let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
               amountAlreadyRead <- lastReadChunk.amountAlreadyRead
               lastReadChunk.pages
               |> Array.concat
@@ -230,7 +244,7 @@ module Read = begin
               |> fun x -> ([|(Map.empty |> Map.add "SUM" ("VInteger32", box x), None)|])
               |> Some
           | Expression.ProjectionParameter.All, Some (Expression.Operators.Equal (_, key)) ->
-              let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
               amountAlreadyRead <- lastReadChunk.amountAlreadyRead
               lastReadChunk.pages
               |> Array.concat

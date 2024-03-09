@@ -20,4 +20,8 @@
     <PackageReference Update="FSharp.Core" Version="8.0.100" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="FsToolkit.ErrorHandling" Version="4.15.1" />
+  </ItemGroup>
+
 </Project>

@@ -88,12 +88,15 @@ module Expression = begin
         | Equal of string * int
 
     type t =
+        | Begin of string list * (t list)
         | Minus of t * t
         | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
         | CreateConstraint of Name: string
         | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option
         | Project of Relation: string * Attributes: ProjectionParameter * Refinement: Operators option
+        | LockRead of t
+        | LockWrite of t
     and UpdateFieldInfo =
         { FieldName: string
           FieldType: Type.t

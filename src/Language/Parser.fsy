@@ -22,6 +22,10 @@ open Language
 %token SUM
 %token ALL
 %token SET
+%token LOCK_READ
+%token LOCK_WRITE
+%token BEGIN
+%token END
 
 // Misc tokens
 %token EOF
@@ -42,6 +46,9 @@ start: File end { $1 }
      | end      { None }
 
 File:
+	| LOCK_READ Statement { Some (Expression.LockRead $2) }
+	| LOCK_WRITE Statement { Some (Expression.LockWrite $2) }
+        | BEGIN IDENTIFIER IDENTIFIER IDENTIFIER ListStatements END { Some (Expression.Begin ([$2; $3; $4],$5))}
 	| Statement { Some $1 }
         
 Statement:
@@ -109,6 +116,15 @@ Rev_Values:
     { ($2, (match $3 with
             | "VARCHAR" -> Type.TVariableString $5), Value.VVariableString $7) :: $1 }
 
+ListStatements:
+  | { [] }
+  | RevStatements { List.rev $1 }
+
+RevStatements:
+  | Statement
+    { [$1] }
+  | RevStatements Statement
+    { $2 :: $1 }
 
 // Using F# keywords for nonterminal names is okay.
 end: EOF { None }
