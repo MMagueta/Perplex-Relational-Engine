@@ -51,11 +51,14 @@ module Runner =
         | Effect of
             Kind: string *
             Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
-        | Projection of Map<string, string*obj> array//Language.Value.t> array
+        | Projection of (Map<string, (string*obj)>*IO.Read.OffsetNumber option) array//Language.Value.t> array
+        | Update
+        | Minus of int
 
-    let execute (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
+    let rec execute (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
         match expression with
         | Expression.Insert(relationName, fields) ->
+            
             let (Entity.Relation (tableInfo, _)) = schema.[relationName]
 
             fields
@@ -64,6 +67,7 @@ module Runner =
             |> IO.Write.Disk.writeFact
                 schema
                 relationName
+                None
                 // (Schema.TableByteSize schema.[relationName])
                 // tableInfo.RowCount
             let updatedSchema =
@@ -93,24 +97,49 @@ module Runner =
                         schema
                         
             Schema.persist(updatedSchema)
-
             Effect("CREATED RELATION", updatedSchema)
-        | Expression.Project(relationName, attributesToProject) when (Map.tryFind relationName schema).IsSome ->
+            
+        | Expression.Project(relationName, attributesToProject, refinement) when (Map.tryFind relationName schema).IsSome ->
             // let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict attributesToProject) ("Age", 23)
             let indexBuilder: IO.Read.IndexBuilder =
-                fun chunkNumber pageNumber instanceNumber columns ->
+                fun offset chunkNumber pageNumber instanceNumber columns ->
                     match Map.tryFind "AccountNumber" columns with
                     | Some (Value.VInteger32 v) ->
                         { entity = columns
                           key = v
                           chunkNumber = chunkNumber
+                          offset = offset
                           pageNumber = pageNumber
                           slotNumber = instanceNumber }
                     | _ -> failwith "AAA"
-            let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict []) (Some 4) indexBuilder
+            let search = IO.Read.search schema relationName attributesToProject refinement indexBuilder
             match search with
             | Some result ->
                 Projection result
             | None -> Projection [||]
 
+        | Expression.Update(relationName, attributeToUpdate, refinement) when (Map.tryFind relationName schema).IsSome ->
+            let (Minus attributeEvaluation) = execute logger attributeToUpdate.FieldValue schema
+            let (Projection refinementEvaluation) = execute logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+            printfn "ATTR: %A" attributeEvaluation
+            printfn "REF: %A" refinementEvaluation
+            let refinementEvaluation =
+                Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
+            IO.Read.update schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
+            |> ignore
+            Update
+
+        | Expression.Minus(left, right) ->
+            let leftEval = execute logger left schema
+            let rightEval = execute logger right schema
+            printfn "LEFT: %A" leftEval
+            printfn "RIGHT: %A" rightEval
+            match leftEval, rightEval with
+            | Projection x, Projection y ->
+                let (_, leftVal) = (fst x.[0]).["SUM"]
+                let (_, rightVal) = (fst y.[0]).["SUM"]
+                Minus ((leftVal :?> int) - (rightVal :?> int))
+            | _ -> failwith ""
+
+        | otherwise -> failwithf "NOT EXPECTING %A" otherwise
             

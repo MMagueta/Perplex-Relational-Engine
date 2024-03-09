@@ -46,7 +46,7 @@ module Write = begin
     open System
     open System.IO
     
-    let writeFact (schema: Schema.t) (relationName: string) (fact: Fact) : unit =
+    let writeFact (schema: Schema.t) (relationName: string) position (fact: Fact): unit =
         match Map.tryFind relationName schema with
         | Some (Entity.Relation (relationAttributes, physicalOffset)) ->
             let content = convertFact schema relationName fact
@@ -55,14 +55,17 @@ module Write = begin
             use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate) in
             use binaryStream = new IO.BinaryWriter(stream) in
             // logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
-            let offset = physicalOffset * relationDefinitionSize
+            let offset =
+                match position with
+                | None -> physicalOffset * relationDefinitionSize
+                | Some offset -> offset
             let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
             // Fill with blanks
             binaryStream.Write [| for _ in 0..(relationDefinitionSize - 1) do 0uy |]
             let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
             binaryStream.Write content
         | _ -> ()
-       
+
   end  
 end
 
@@ -110,16 +113,18 @@ module Read = begin
   type ChunkNumber = int
   type PageNumber = int
   type InstanceNumber = int
+  type OffsetNumber = int
   type Index =
       { chunkNumber: ChunkNumber
         pageNumber: PageNumber
         slotNumber: InstanceNumber
-        entity: ColumnMap 
+        entity: ColumnMap
+        offset: int
         key: int }
 
   type Page = Index array array
 
-  type IndexBuilder = ChunkNumber -> PageNumber -> InstanceNumber -> ColumnMap -> Index
+  type IndexBuilder = OffsetNumber -> ChunkNumber -> PageNumber -> InstanceNumber -> ColumnMap -> Index
 
   let buildPages instancesPerPage (reader: IO.FileStream) instanceSize amountAlreadyRead chunkNumber (indexBuilder: IndexBuilder) schema entityName (relationToIndex: Map<string,Entity.FieldMetadata>) =
       let amountAlreadyRead = amountAlreadyRead
@@ -142,7 +147,7 @@ module Read = begin
                                (fun slotNumber stream ->
                                     try
                                         deserialize schema entityName stream
-                                        |> indexBuilder chunkNumber pageNumber slotNumber
+                                        |> indexBuilder (chunkNumber*instanceSize+(slotNumber * instanceSize)) chunkNumber pageNumber slotNumber
                                         |> Some
                                     with e -> printfn "ERROR: %A" e.Message; None)
                               |> Array.choose id
@@ -176,42 +181,66 @@ module Read = begin
         pageNumber: int
         slotNumber: int }
 
-  let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (key: int option) (indexBuilder: IndexBuilder) =
+  let update (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) =
+      projection
+      |> Array.map (fun (x, (offset: OffsetNumber option)) ->
+                    Map.change
+                        attributeToUpdate
+                        (function
+                           | (Some (Value.VInteger32 _)) ->
+                               Some (Value.VInteger32 valueReplace))
+                        x
+                    |> fun x -> (x, offset))
+      |> Array.map (fun (x, offset) -> Write.Disk.writeFact schema relationName offset x)
+
+  let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
       match Map.tryFind entityName schema with
       | Some (Entity.Relation (relationAttributes, _physicalCount)) ->
           
           let initialPageNumber = 0
           let mutable amountAlreadyRead = 0
           
-          let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
-          printfn "Leaves: %A" lastReadChunk.pages
-          Tree.print_leaves lastReadChunk.tree
-          amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+          // printfn "Leaves: %A" lastReadChunk.pages
+          // Tree.print_leaves lastReadChunk.tree
+          
 
-          match projectionParam, key with
+          match projectionParam, refinement with
           | Expression.ProjectionParameter.Restrict attributes, None ->
               None
-          | Expression.ProjectionParameter.All, Some key ->
+          | Expression.ProjectionParameter.Restrict _, Some (Expression.Operators.Equal (attr, key)) ->
+              let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
               let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
               let crecord =
                   Marshal.PtrToStructure<CRecord> value
               printfn "%A" <| crecord              
               printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
               None
-          | Expression.ProjectionParameter.Restrict attributes, Some key ->
-              // printfn "HERE"
-              // let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
-              // let crecord =
-                  // Marshal.PtrToStructure<CRecord> value
-              // printfn "%A" <| crecord
-              // printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
-              // let x =
+          | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
+              let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
               lastReadChunk.pages
               |> Array.concat
               |> Array.concat
-              |> Array.choose (function {entity = entity; key = key_val} when key_val = key -> Some (entity |> Map.map (fun _ v -> v.Serialize()))
-                                      | _ -> None)
-              |> Some 
+              |> Array.choose (function
+                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
+                                    Some (entity.[attr], offset)
+                                | _ -> None)
+              |> Array.sumBy (fun (Value.VInteger32 x, _) -> x)
+              |> fun x -> ([|(Map.empty |> Map.add "SUM" ("VInteger32", box x), None)|])
+              |> Some
+          | Expression.ProjectionParameter.All, Some (Expression.Operators.Equal (_, key)) ->
+              let lastReadChunk = buildPagination schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+              lastReadChunk.pages
+              |> Array.concat
+              |> Array.concat
+              |> Array.choose (function
+                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
+                                    Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
+                                | _ -> None)
+              |> Some
+          | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
 

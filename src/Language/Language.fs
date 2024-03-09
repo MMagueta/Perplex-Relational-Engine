@@ -45,6 +45,13 @@ module Value = begin
                 ( "VInteger32", v)
             | VVariableString v ->
                 ( "VVariableString", v)
+         static Deserialize((name, value): string * obj): t =
+            match name with
+            | "VInteger32" ->
+                VInteger32 (value :?> int32)
+            | "VVariableString" ->
+                VVariableString (value :?> string)
+            | otherwise -> failwithf "Unexpected type casting: %s" otherwise
 end
 
 [<RequireQualifiedAccess>]
@@ -75,12 +82,22 @@ module Expression = begin
     type ProjectionParameter =
         | All
         | Restrict of string list
+        | Sum of string
+
+    type Operators =
+        | Equal of string * int
 
     type t =
-        | Insert of Name: string * Fields: InsertFieldInfo array
+        | Minus of t * t
+        | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
         | CreateConstraint of Name: string
-        | Project of Relation: string * Attributes: string list
+        | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option
+        | Project of Relation: string * Attributes: ProjectionParameter * Refinement: Operators option
+    and UpdateFieldInfo =
+        { FieldName: string
+          FieldType: Type.t
+          FieldValue: t }
 end
 
 [<RequireQualifiedAccess>]

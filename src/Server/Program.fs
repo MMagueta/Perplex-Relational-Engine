@@ -5,8 +5,9 @@ open System.Net.Sockets
 open System.Text
 
 open Configuration
+open Executor
 
-
+let schema = Schema.loadFromDisk()
 
 let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
     let request = Encoding.UTF8.GetString(buffer, 0, bytesReceived)
@@ -21,6 +22,9 @@ let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
     | Executor.Runner.Projection result ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
         Ok (schema, System.Text.Json.JsonSerializer.Serialize (result, System.Text.Json.JsonSerializerOptions.Default))
+    | Executor.Runner.Update ->
+        logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
+        Ok (schema, "Updated columns")
     // with ex ->
         // logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
         // Error $"Failed: {ex.Message}";
@@ -59,7 +63,7 @@ let start () =
                 finishHandler handler response
                 listen schema
 
-        listen (Executor.Main.schema)
+        listen schema
 
         // with ex ->
             // logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)

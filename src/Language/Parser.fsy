@@ -13,10 +13,15 @@ open Language
 %token CREATE
 %token RELATION
 %token INSERT
+%token UPDATE
 %token PROJECT
 %token SELECT
 %token EQUAL
+%token MINUS
 %token NOT
+%token SUM
+%token ALL
+%token SET
 
 // Misc tokens
 %token EOF
@@ -38,14 +43,32 @@ start: File end { $1 }
 
 File:
 	| Statement { Some $1 }
-
+        
 Statement:
 	| CREATE RELATION IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM 
 	    { Expression.CreateRelation ($3, Map.ofList $5) }
-        | PROJECT LEFT_LIM ListAttributes RIGHT_LIM IDENTIFIER
-            { Expression.Project ($5, List.map (fun ((identifier: string), _type') -> identifier) $3) }
+        | PROJECT LEFT_LIM ListAttributes RIGHT_LIM IDENTIFIER Refinement
+            { Expression.Project ($5, List.map (fun ((identifier: string), _type') -> identifier) $3
+                                      |> Expression.ProjectionParameter.Restrict, $6) }
+        | PROJECT SUM LEFT_LIM IDENTIFIER TYPE' RIGHT_LIM IDENTIFIER Refinement
+            { Expression.Project ($7, Expression.ProjectionParameter.Sum $4, $8) }
+        | PROJECT ALL IDENTIFIER Refinement
+            { Expression.Project ($3, Expression.ProjectionParameter.All, $4) }
 	| INSERT IDENTIFIER LEFT_LIM ListValues RIGHT_LIM
 	    { Expression.Insert ($2, List.map (fun ((identifier: string), type', value) -> { FieldName = identifier; FieldType = type'; FieldValue = value }: Expression.InsertFieldInfo) $4 |> Array.ofList) }
+        | UPDATE IDENTIFIER SET IDENTIFIER LEFT_LIM PROJECT SUM LEFT_LIM IDENTIFIER TYPE' RIGHT_LIM IDENTIFIER Refinement MINUS PROJECT SUM LEFT_LIM IDENTIFIER TYPE' RIGHT_LIM IDENTIFIER Refinement RIGHT_LIM Refinement
+	    { Expression.Update ($2, {FieldName = $4; FieldType = Type.TInteger32; FieldValue = Expression.Minus (Expression.Project ($12, Expression.ProjectionParameter.Sum $9, $13), Expression.Project ($21, Expression.ProjectionParameter.Sum $18, $22))}, $24) }
+        // | UPDATE IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM LEFT_LIM Statement RIGHT_LIM SELECT IDENTIFIER EQUAL LITERAL_INTEGER
+	//     { Expression.Update ($2, List.map (fun ((identifier: string), type') ->
+        //                                         { FieldName = identifier
+        //                                           FieldType = type'
+        //                                           FieldValue = $7 }: Expression.UpdateFieldInfo) $4
+        //                              |> Array.ofList, Some (Expression.Operators.Equal ($10, $12))) }
+
+Refinement:
+        | { None }
+        | SELECT IDENTIFIER EQUAL LITERAL_INTEGER
+            { Some <| Expression.Operators.Equal ($2, $4) }
 
 ListAttributes:
   | { [] }
@@ -86,5 +109,7 @@ Rev_Values:
     { ($2, (match $3 with
             | "VARCHAR" -> Type.TVariableString $5), Value.VVariableString $7) :: $1 }
 
+
 // Using F# keywords for nonterminal names is okay.
 end: EOF { None }
+

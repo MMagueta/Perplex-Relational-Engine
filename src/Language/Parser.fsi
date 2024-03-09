@@ -4,10 +4,15 @@ type token =
   | RIGHT_LIM
   | LEFT_LIM
   | EOF
+  | SET
+  | ALL
+  | SUM
   | NOT
+  | MINUS
   | EQUAL
   | SELECT
   | PROJECT
+  | UPDATE
   | INSERT
   | RELATION
   | CREATE
@@ -19,10 +24,15 @@ type tokenId =
     | TOKEN_RIGHT_LIM
     | TOKEN_LEFT_LIM
     | TOKEN_EOF
+    | TOKEN_SET
+    | TOKEN_ALL
+    | TOKEN_SUM
     | TOKEN_NOT
+    | TOKEN_MINUS
     | TOKEN_EQUAL
     | TOKEN_SELECT
     | TOKEN_PROJECT
+    | TOKEN_UPDATE
     | TOKEN_INSERT
     | TOKEN_RELATION
     | TOKEN_CREATE
@@ -37,6 +47,7 @@ type nonTerminalId =
     | NONTERM_start
     | NONTERM_File
     | NONTERM_Statement
+    | NONTERM_Refinement
     | NONTERM_ListAttributes
     | NONTERM_Rev_Attributes
     | NONTERM_ListValues
