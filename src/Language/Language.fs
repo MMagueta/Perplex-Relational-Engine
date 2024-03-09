@@ -94,6 +94,8 @@ module Expression = begin
         | CreateConstraint of Name: string
         | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option
         | Project of Relation: string * Attributes: ProjectionParameter * Refinement: Operators option
+        | LockRead of t
+        | LockWrite of t
     and UpdateFieldInfo =
         { FieldName: string
           FieldType: Type.t

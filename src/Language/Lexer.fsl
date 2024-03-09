@@ -38,6 +38,8 @@ rule tokenStream = parse
 | "ALL"         { Parser.ALL }
 | ('='|"EQUAL") { Parser.EQUAL }
 | ('-'|"MINUS") { Parser.MINUS }
+| ("LOCK READ") { Parser.LOCK_READ }
+| ("LOCK WRITE") { Parser.LOCK_WRITE }
 | ("NOT")       { Parser.NOT }
 | type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
 | identifier	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }

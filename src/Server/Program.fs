@@ -4,17 +4,18 @@ open System.Net
 open System.Net.Sockets
 open System.Text
 
+open System.Threading
+
 open Configuration
 open Executor
 
-let schema = Schema.loadFromDisk()
+let mutable schema =
+    Schema.loadFromDisk()
 
-let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
-    let request = Encoding.UTF8.GetString(buffer, 0, bytesReceived)
-    let ast = PerplexDB.Language.Main.generateAST(request)
+let handle (logger: Serilog.ILogger) schema buffer ast request =
     let mutable response = "For now there is no response apart from success."
     // try
-    let result = Executor.Runner.execute None logger ast.Value schema
+    let result = Executor.Runner.execute None logger ast schema
     match result with
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
@@ -36,37 +37,63 @@ let finishHandler (handler: Socket) (response: string) =
     handler.Shutdown(SocketShutdown.Both)
     handler.Close()
 
+let rec performer logger (handler: Socket) = async {
+    try
+        let buffer = [| for _ in 1..1024 do 0uy |]
+        let bytesReceived = handler.Receive(buffer)
+        let request = Encoding.UTF8.GetString(buffer, 0, bytesReceived)
+        match PerplexDB.Language.Main.generateAST(request) with
+        | Some (Language.Expression.LockWrite ast) -> 
+            let rwl = new ReaderWriterLockSlim()
+            if rwl.TryEnterWriteLock 100 then
+                match handle logger schema buffer ast request with
+                | Ok (newSchema, response) ->
+                    finishHandler handler response
+                    try schema <- newSchema
+                    finally rwl.ExitWriteLock(); rwl.Dispose()
+                | Error response ->
+                    finishHandler handler response
+            else finishHandler handler "Failed to acquire write lock."
+        | Some (Language.Expression.LockRead ast) ->
+            let rwl = new ReaderWriterLockSlim()
+            if rwl.TryEnterReadLock 100 then
+                match handle logger schema buffer ast request with
+                | Ok (newSchema, response) ->
+                    finishHandler handler response
+                    try schema <- newSchema
+                    finally rwl.ExitReadLock(); rwl.Dispose()
+                | Error response ->
+                    finishHandler handler response
+            else finishHandler handler "Failed to acquire read lock."
+        | Some _ -> finishHandler handler "Requires to acquire a lock. Please use LOCK (READ|WRITE) before the query expression."
+        | None -> finishHandler handler "Nothing to do."
+    with ex -> logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
+    return ()
+}
+
 let start () =
     let config = Builder.loadConfiguration()
     match config with
     | Ok config ->
         let logger = config.Logger
         use listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
-        // try
         logger.ForContext("ExecutionContext", "Server").Information($"Running at {IPAddress.Any}:4000")
             
         listener.Bind(new IPEndPoint(IPAddress.Any, 4000))
         listener.Listen(10)
 
-        let rec listen schema =
-            logger.ForContext("ExecutionContext", "Runner").Information("Waiting for a connection...")
-            
-            let handler = listener.Accept()
-            let buffer = [| for _ in 1..1024 do 0uy |]
-            let bytesReceived = handler.Receive(buffer)
+        let rec listen () =
+            try
+                logger.ForContext("ExecutionContext", "Runner").Information("Waiting for a connection...")
+                
+                let handler = listener.Accept()
+                Async.Start(performer logger handler)
+            with ex ->
+                logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
+            listen ()
+        listen ()
 
-            match handle logger schema buffer bytesReceived with
-            | Ok (newSchema, response) ->
-                finishHandler handler response
-                listen newSchema
-            | Error response ->
-                finishHandler handler response
-                listen schema
-
-        listen schema
-
-        // with ex ->
-            // logger.ForContext("ExecutionContext", "Runner").Error(ex.Message)
+        
     | Error err ->
         failwith err
 

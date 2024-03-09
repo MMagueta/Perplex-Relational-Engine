@@ -22,6 +22,8 @@ open Language
 %token SUM
 %token ALL
 %token SET
+%token LOCK_READ
+%token LOCK_WRITE
 
 // Misc tokens
 %token EOF
@@ -42,6 +44,8 @@ start: File end { $1 }
      | end      { None }
 
 File:
+	| LOCK_READ Statement { Some (Expression.LockRead $2) }
+	| LOCK_WRITE Statement { Some (Expression.LockWrite $2) }
 	| Statement { Some $1 }
         
 Statement:

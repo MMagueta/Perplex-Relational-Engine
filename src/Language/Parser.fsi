@@ -4,6 +4,8 @@ type token =
   | RIGHT_LIM
   | LEFT_LIM
   | EOF
+  | LOCK_WRITE
+  | LOCK_READ
   | SET
   | ALL
   | SUM
@@ -24,6 +26,8 @@ type tokenId =
     | TOKEN_RIGHT_LIM
     | TOKEN_LEFT_LIM
     | TOKEN_EOF
+    | TOKEN_LOCK_WRITE
+    | TOKEN_LOCK_READ
     | TOKEN_SET
     | TOKEN_ALL
     | TOKEN_SUM
