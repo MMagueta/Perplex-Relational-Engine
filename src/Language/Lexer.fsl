@@ -27,27 +27,29 @@ let type' = ("INTEGER"|"VARCHAR")
 
 rule tokenStream = parse
 // --------------------------
-| "CREATE"      { Parser.CREATE }
-| "RELATION"    { Parser.RELATION }
-| "INSERT"      { Parser.INSERT }
-| "UPDATE"      { Parser.UPDATE }
-| "PROJECT"     { Parser.PROJECT }
-| "SELECT"      { Parser.SELECT }
-| "SUM"         { Parser.SUM }
-| "SET"         { Parser.SET }
-| "ALL"         { Parser.ALL }
-| ('='|"EQUAL") { Parser.EQUAL }
-| ('-'|"MINUS") { Parser.MINUS }
-| ("LOCK READ") { Parser.LOCK_READ }
+| "CREATE"       { Parser.CREATE }
+| "RELATION"     { Parser.RELATION }
+| "INSERT"       { Parser.INSERT }
+| "UPDATE"       { Parser.UPDATE }
+| "PROJECT"      { Parser.PROJECT }
+| "SELECT"       { Parser.SELECT }
+| "SUM"          { Parser.SUM }
+| "SET"          { Parser.SET }
+| "ALL"          { Parser.ALL }
+| ('='|"EQUAL")  { Parser.EQUAL }
+| ('-'|"MINUS")  { Parser.MINUS }
+| ("LOCK READ")  { Parser.LOCK_READ }
 | ("LOCK WRITE") { Parser.LOCK_WRITE }
-| ("NOT")       { Parser.NOT }
-| type'         { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
-| identifier	{ Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
-| integer       { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
-| '"'           { read_string "" false lexbuf } 
+| ("BEGIN")      { Parser.BEGIN }
+| ("END")        { Parser.END }
+| ("NOT")        { Parser.NOT }
+| type'          { Parser.TYPE' (LexBuffer<_>.LexemeString lexbuf) }
+| identifier	 { Parser.IDENTIFIER (LexBuffer<_>.LexemeString lexbuf) }
+| integer        { Parser.LITERAL_INTEGER (int <| (LexBuffer<_>.LexemeString lexbuf)) }
+| '"'            { read_string "" false lexbuf } 
 // --------------------------
 | whitespace { tokenStream lexbuf }
-| newline	 { newline lexbuf; tokenStream lexbuf }
+| newline    { newline lexbuf; tokenStream lexbuf }
 | leftLim    { Parser.LEFT_LIM }
 | rightLim   { Parser.RIGHT_LIM }
 // --------------------------

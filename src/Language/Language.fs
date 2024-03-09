@@ -88,6 +88,7 @@ module Expression = begin
         | Equal of string * int
 
     type t =
+        | Begin of string list * (t list)
         | Minus of t * t
         | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>

@@ -4,6 +4,8 @@ type token =
   | RIGHT_LIM
   | LEFT_LIM
   | EOF
+  | END
+  | BEGIN
   | LOCK_WRITE
   | LOCK_READ
   | SET
@@ -26,6 +28,8 @@ type tokenId =
     | TOKEN_RIGHT_LIM
     | TOKEN_LEFT_LIM
     | TOKEN_EOF
+    | TOKEN_END
+    | TOKEN_BEGIN
     | TOKEN_LOCK_WRITE
     | TOKEN_LOCK_READ
     | TOKEN_SET
@@ -56,6 +60,8 @@ type nonTerminalId =
     | NONTERM_Rev_Attributes
     | NONTERM_ListValues
     | NONTERM_Rev_Values
+    | NONTERM_ListStatements
+    | NONTERM_RevStatements
     | NONTERM_end
 /// This function maps tokens to integer indexes
 val tagOfToken: token -> int

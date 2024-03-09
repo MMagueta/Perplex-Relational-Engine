@@ -30,6 +30,12 @@
 (setq project-debit "LOCK READ PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 5")
 (setq project-credit "LOCK READ PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 5")
 
+(setq transact "BEGIN Account Debit Credit
+        UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1) SELECT AccountNumber = 1
+        END")
+
+(perplex-client transact)
+
 (perplex-client account-create-relation)
 (perplex-client credit-create-relation)
 (perplex-client debit-create-relation)

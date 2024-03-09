@@ -38,6 +38,8 @@ end
 module Runner =
     open Language
 
+    open FsToolkit.ErrorHandling
+
     let _ =
         Log.Logger <-
             LoggerConfiguration()
@@ -187,6 +189,40 @@ module Runner =
                 let (_, rightVal) = (fst y.[0]).["SUM"]
                 Minus ((leftVal :?> int) - (rightVal :?> int))
             | _ -> failwith ""
+
+        | Expression.Begin (entities, commands) ->
+            let mutable schema = schema
+            let streams =
+                List.traverseResultM (fun relationName -> IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100) entities
+                |> function Ok streams -> streams
+                          | Error err -> raise (System.Exception err)
+            for cmd in commands do
+                match cmd with
+                | Expression.LockRead _ ->
+                    logger.Warning "Lock for reads not considered in blocks as of now. WIP"
+                    ()
+                | Expression.Update (relationName, _, _) ->
+                    let result =
+                        execute (Some <| streams.Item (List.tryFindIndex ((=) relationName) entities |> function Some i -> i | None -> failwith "Could not find index")) logger cmd schema
+                    match result with
+                    | ExecutionResult.Update -> ()
+                    | _ -> ()
+                | Expression.LockWrite (Expression.Insert (relationName, _)) ->
+                    let result =
+                        execute (Some <| streams.Item (List.tryFindIndex ((=) relationName) entities |> function Some i -> i | None -> failwith "Could not find index")) logger cmd schema
+                    match result with
+                    | ExecutionResult.Effect(_, newSchema) -> schema <- newSchema
+                    | _ -> ()
+                | Expression.LockWrite _ ->
+                    logger.Warning "Lock for writes is currently only available for updates and inserts. WIP"
+                    ()
+                | otherwise -> logger.Error ("Did not expect '{@Otherwise}' in a transact block.", otherwise)
+            done
+
+            List.iter (fun (s: System.IO.FileStream) -> s.Dispose()) streams
+            
+            Effect("BLOCK", schema)
+            
 
         | otherwise -> failwithf "NOT EXPECTING %A" otherwise
             

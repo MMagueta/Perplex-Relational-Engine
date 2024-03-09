@@ -13,7 +13,6 @@ let mutable schema =
     Schema.loadFromDisk()
 
 let handle (logger: Serilog.ILogger) schema buffer ast request =
-    let mutable response = "For now there is no response apart from success."
     // try
     let result = Executor.Runner.execute None logger ast schema
     match result with
@@ -26,6 +25,10 @@ let handle (logger: Serilog.ILogger) schema buffer ast request =
     | Executor.Runner.Update ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
         Ok (schema, "Updated columns")
+    
+    | otherwise ->
+        logger.ForContext("ExecutionContext", "Server").Error("Failed on '{@Request}': {@Otherwise}", request, otherwise)
+        Error $"Engine unexpected return: '{otherwise}'"
     // with ex ->
         // logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
         // Error $"Failed: {ex.Message}";
@@ -65,6 +68,17 @@ let rec performer logger (handler: Socket) = async {
                 | Error response ->
                     finishHandler handler response
             else finishHandler handler "Failed to acquire read lock."
+        | Some ((Language.Expression.Begin _) as block) ->
+            let rwl = new ReaderWriterLockSlim()
+            if rwl.TryEnterWriteLock 100 then
+                match handle logger schema buffer block request with
+                | Ok (newSchema, response) ->
+                    finishHandler handler response
+                    try schema <- newSchema
+                    finally rwl.ExitWriteLock(); rwl.Dispose()
+                | Error response ->
+                    finishHandler handler response
+            else finishHandler handler "Failed to acquire write lock."
         | Some _ -> finishHandler handler "Requires to acquire a lock. Please use LOCK (READ|WRITE) before the query expression."
         | None -> finishHandler handler "Nothing to do."
     with ex -> logger.ForContext("ExecutionContext", "Runner").ForContext("StackTrace", ex.StackTrace).Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
