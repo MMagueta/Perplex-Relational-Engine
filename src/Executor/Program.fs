@@ -99,15 +99,15 @@ module Runner =
             // let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict attributesToProject) ("Age", 23)
             let indexBuilder: IO.Read.IndexBuilder =
                 fun chunkNumber pageNumber instanceNumber columns ->
-                    match Map.tryFind "Age" columns with
+                    match Map.tryFind "AccountNumber" columns with
                     | Some (Value.VInteger32 v) ->
                         { entity = columns
                           key = v
                           chunkNumber = chunkNumber
                           pageNumber = pageNumber
                           slotNumber = instanceNumber }
-                    | _ -> failwith ""
-            let search = IO.Read.search schema relationName Language.Expression.ProjectionParameter.All (Some 25) indexBuilder
+                    | _ -> failwith "AAA"
+            let search = IO.Read.search schema relationName Language.Expression.ProjectionParameter.All (Some 1) indexBuilder
             match search with
             | Some result ->
                 printfn "%A" (Map.toArray result)

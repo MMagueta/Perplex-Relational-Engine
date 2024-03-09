@@ -111,57 +111,63 @@ module Read = begin
   type PageNumber = int
   type InstanceNumber = int
   type Index =
-      { key: int (* should be generic, int for now *)
-        chunkNumber: ChunkNumber
+      { chunkNumber: ChunkNumber
         pageNumber: PageNumber
         slotNumber: InstanceNumber
-        entity: ColumnMap }
-  [<Struct>]
-  type Page = 
-      { instances: ColumnMap array //byte array array
-        indexes: Index array }
+        entity: ColumnMap 
+        key: int }
+
+  type Page = Index array array
 
   type IndexBuilder = ChunkNumber -> PageNumber -> InstanceNumber -> ColumnMap -> Index
 
   let buildPages instancesPerPage (reader: IO.FileStream) instanceSize amountAlreadyRead chunkNumber (indexBuilder: IndexBuilder) schema entityName (relationToIndex: Map<string,Entity.FieldMetadata>) =
-      let mutable buffer = [|for _ in 1..28(*8_000*) do 0uy|]
       let amountAlreadyRead = amountAlreadyRead
       let amountToRead =
           if instancesPerPage * instanceSize > ((reader.Length |> int32) - amountAlreadyRead)
           then ((reader.Length |> int32) - amountAlreadyRead)
           else instancesPerPage * instanceSize
+      let mutable buffer = [|for _ in 1..amountToRead do 0uy|]
       reader.Read(buffer, chunkNumber*instanceSize, amountToRead) |> ignore
       let pages =
           buffer
           |> Array.chunkBySize instanceSize
           |> Array.chunkBySize instancesPerPage
+          |> Array.chunkBySize instancesPerPage
           |> Array.mapi (fun pageNumber instances ->
-                         let indexing =
-                             instances
+                           instances
+                           |> Array.mapi (fun i page ->
+                             page
                              |> Array.mapi
-                                 (fun i stream ->
-                                      deserialize schema entityName stream
-                                      |> indexBuilder chunkNumber pageNumber i)
-                         { instances = Array.map (_.entity) indexing
-                           indexes = indexing })
+                               (fun slotNumber stream ->
+                                    try
+                                        deserialize schema entityName stream
+                                        |> indexBuilder chunkNumber i slotNumber
+                                        |> Some
+                                    with e -> printfn "ERROR: %A" e.Message; None)
+                              |> Array.choose id
+                                          )
+                           
+                         )
       pages, amountAlreadyRead + amountToRead
-      
+
   type Pagination =
       { pages: Page array; tree: nativeint; amountAlreadyRead: int }
   
   let buildPagination schema entityName (relationToIndex: Map<string, Entity.FieldMetadata>) (indexBuilder: IndexBuilder) initialPageNumber amountAlreadyRead =
       let instanceSize = Schema.relationSize relationToIndex
-      let instancesPerPage: int32 = 28(*8_000*) / instanceSize
+      let instancesPerPage: int32 = 128(*8_000*) / instanceSize
       use reader = System.IO.File.OpenRead $"/tmp/perplexdb/{entityName}.ndf"
       reader.Seek (0, System.IO.SeekOrigin.Begin) |> ignore
       // let maxPagesAtOnce = 64
       let pages, amountAlreadyRead = buildPages instancesPerPage reader instanceSize amountAlreadyRead 0 indexBuilder schema entityName relationToIndex
-      let tree = Array.fold (fun tree page ->
+      let tree = Array.fold (fun tree chunk ->
+                             Array.fold (fun tree page ->
                                Array.fold (fun tree { key = key
                                                       chunkNumber = chunkNumber
                                                       pageNumber = pageNumber
                                                       slotNumber = slotNumber} ->
-                                             Tree.insert(tree, key, chunkNumber, pageNumber, slotNumber)) tree page.indexes) IntPtr.Zero pages
+                                             Tree.insert(tree, key, chunkNumber, pageNumber, slotNumber)) tree page) tree chunk) IntPtr.Zero pages
       { pages = pages; tree = tree; amountAlreadyRead = amountAlreadyRead }
 
   [<Struct>]
@@ -169,16 +175,6 @@ module Read = begin
       { chunkNumber: int
         pageNumber: int
         slotNumber: int }
-
-  [<Struct>]
-  type Leaf =
-      { pointers: nativeint array
-        keys: int array
-        parent: nativeint //CNode
-        is_leaf: bool
-        num_keys: int
-        next: nativeint //CNode
-      }
 
   let search (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (key: int option) (indexBuilder: IndexBuilder) =
       match Map.tryFind entityName schema with
@@ -193,8 +189,8 @@ module Read = begin
           amountAlreadyRead <- lastReadChunk.amountAlreadyRead
 
           match projectionParam, key with
-          | Expression.ProjectionParameter.All, _ ->
-              None
+          // | Expression.ProjectionParameter.All, _ ->
+              // None
           | Expression.ProjectionParameter.Restrict attributes, None ->
               None
           | Expression.ProjectionParameter.Restrict attributes, Some key ->
@@ -204,13 +200,24 @@ module Read = begin
                   |> Marshal.PtrToStructure<CRecord array>
               let crecord =
                   Marshal.PtrToStructure<CRecord> value
-              printfn "%A" <| crecord
+
               // match 
               // | -1 -> None
               // | identifierInPage ->
                   // lastReadChunk
                   // |> Map.filter (fun k _ -> List.contains k attributes)
                   // |> Some
+              None
+           | Expression.ProjectionParameter.All, Some key ->
+              let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
+              // let leaf =
+                  // Tree.find_and_get_node (lastReadChunk.tree, key)
+                  // |> Marshal.PtrToStructure<CRecord array>
+              let crecord =
+                  Marshal.PtrToStructure<CRecord> value
+              printfn "%A" <| crecord              
+              printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
+              // printfn "PAGES: %A" (Array.tryFind (fun p -> p) lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber])
               None
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName

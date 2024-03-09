@@ -14,10 +14,14 @@
     (set-process-filter connection 'perplex-handler)
     (process-send-string connection content)))
 
-(setq default-create-relation "CREATE RELATION Person (Name VARCHAR(10) Age INTEGER)")
-(setq default-insert "INSERT Person (Name VARCHAR(10) \"Magueta\" Age INTEGER 25)")
-(setq default-search "PROJECT (Name VARCHAR(10)) Person")
+(setq account-create-relation "CREATE RELATION Account (AccountNumber INTEGER Balance INTEGER Limit INTEGER)")
+(setq credit-create-relation "CREATE RELATION Credit (AccountNumber INTEGER Value INTEGER Date VARCHAR(10))")
+(setq debit-create-relation "CREATE RELATION Debit (AccountNumber INTEGER Value INTEGER Date VARCHAR(10))")
+(setq default-insert "INSERT Account (AccountNumber INTEGER 1 Balance INTEGER 500 Limit INTEGER 2000)")
+(setq default-search "PROJECT (AccountNumber INTEGER) Account")
 
-(perplex-client default-create-relation)
+(perplex-client account-create-relation)
+(perplex-client credit-create-relation)
+(perplex-client debit-create-relation)
 (perplex-client default-insert)
 (perplex-client default-search)

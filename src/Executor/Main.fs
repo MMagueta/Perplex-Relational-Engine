@@ -76,6 +76,6 @@ module Main =
                       slotNumber = instanceNumber }
                 | _ -> failwith ""
 
-        IO.Read.search schema "Person" (Language.Expression.ProjectionParameter.Restrict ["Name"]) (Some 25)
+        IO.Read.search schema "Person" (Language.Expression.ProjectionParameter.Restrict ["Name"]) (Some 25) indexBuilder
         |> printfn "%A"
         0
