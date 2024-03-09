@@ -31,6 +31,7 @@
 (setq project-credit "LOCK READ PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 5")
 
 (setq transact "BEGIN Account Debit Credit
+        INSERT Account (AccountNumber INTEGER 1 Balance INTEGER 500 Limit INTEGER 2000)
         UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1) SELECT AccountNumber = 1
         END")
 

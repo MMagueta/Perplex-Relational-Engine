@@ -207,7 +207,7 @@ module Runner =
                     match result with
                     | ExecutionResult.Update -> ()
                     | _ -> ()
-                | Expression.LockWrite (Expression.Insert (relationName, _)) ->
+                | Expression.Insert (relationName, _) ->
                     let result =
                         execute (Some <| streams.Item (List.tryFindIndex ((=) relationName) entities |> function Some i -> i | None -> failwith "Could not find index")) logger cmd schema
                     match result with
