@@ -51,7 +51,7 @@ module Runner =
         | Effect of
             Kind: string *
             Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
-        | Projection of Map<string, Language.Value.t>
+        | Projection of Map<string, string*obj> array//Language.Value.t> array
 
     let execute (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
         match expression with
@@ -107,10 +107,10 @@ module Runner =
                           pageNumber = pageNumber
                           slotNumber = instanceNumber }
                     | _ -> failwith "AAA"
-            let search = IO.Read.search schema relationName Language.Expression.ProjectionParameter.All (Some 1) indexBuilder
+            let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict []) (Some 4) indexBuilder
             match search with
             | Some result ->
-                printfn "%A" (Map.toArray result)
-            | None -> printfn "0 facts."
+                Projection result
+            | None -> Projection [||]
 
-            Effect("PROJECT", schema)
+            

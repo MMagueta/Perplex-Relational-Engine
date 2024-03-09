@@ -6,6 +6,8 @@ open System.Text
 
 open Configuration
 
+
+
 let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
     let request = Encoding.UTF8.GetString(buffer, 0, bytesReceived)
     let ast = PerplexDB.Language.Main.generateAST(request)
@@ -18,12 +20,13 @@ let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
         Ok (newSchema, "Response, but for now there is nothing useful here.")
     | Executor.Runner.Projection result ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-        Ok (schema, result.ToString())
+        Ok (schema, System.Text.Json.JsonSerializer.Serialize (result, System.Text.Json.JsonSerializerOptions.Default))
     // with ex ->
         // logger.ForContext("ExecutionContext", "Server").Error(ex.Message);
         // Error $"Failed: {ex.Message}";
 
 let finishHandler (handler: Socket) (response: string) =
+    printfn "%A" response
     let responseBuffer = Encoding.UTF8.GetBytes(response)
     handler.Send(responseBuffer) |> ignore
     handler.Shutdown(SocketShutdown.Both)

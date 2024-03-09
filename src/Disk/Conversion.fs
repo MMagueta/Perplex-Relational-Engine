@@ -134,15 +134,15 @@ module Read = begin
           |> Array.chunkBySize instanceSize
           |> Array.chunkBySize instancesPerPage
           |> Array.chunkBySize instancesPerPage
-          |> Array.mapi (fun pageNumber instances ->
+          |> Array.mapi (fun chunkNumber instances ->
                            instances
-                           |> Array.mapi (fun i page ->
+                           |> Array.mapi (fun pageNumber page ->
                              page
                              |> Array.mapi
                                (fun slotNumber stream ->
                                     try
                                         deserialize schema entityName stream
-                                        |> indexBuilder chunkNumber i slotNumber
+                                        |> indexBuilder chunkNumber pageNumber slotNumber
                                         |> Some
                                     with e -> printfn "ERROR: %A" e.Message; None)
                               |> Array.choose id
@@ -156,7 +156,7 @@ module Read = begin
   
   let buildPagination schema entityName (relationToIndex: Map<string, Entity.FieldMetadata>) (indexBuilder: IndexBuilder) initialPageNumber amountAlreadyRead =
       let instanceSize = Schema.relationSize relationToIndex
-      let instancesPerPage: int32 = 128(*8_000*) / instanceSize
+      let instancesPerPage: int32 = 100_000 / instanceSize
       use reader = System.IO.File.OpenRead $"/tmp/perplexdb/{entityName}.ndf"
       reader.Seek (0, System.IO.SeekOrigin.Begin) |> ignore
       // let maxPagesAtOnce = 64
@@ -189,36 +189,29 @@ module Read = begin
           amountAlreadyRead <- lastReadChunk.amountAlreadyRead
 
           match projectionParam, key with
-          // | Expression.ProjectionParameter.All, _ ->
-              // None
           | Expression.ProjectionParameter.Restrict attributes, None ->
               None
-          | Expression.ProjectionParameter.Restrict attributes, Some key ->
+          | Expression.ProjectionParameter.All, Some key ->
               let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
-              let leaf =
-                  Tree.find_and_get_node (lastReadChunk.tree, key)
-                  |> Marshal.PtrToStructure<CRecord array>
-              let crecord =
-                  Marshal.PtrToStructure<CRecord> value
-
-              // match 
-              // | -1 -> None
-              // | identifierInPage ->
-                  // lastReadChunk
-                  // |> Map.filter (fun k _ -> List.contains k attributes)
-                  // |> Some
-              None
-           | Expression.ProjectionParameter.All, Some key ->
-              let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
-              // let leaf =
-                  // Tree.find_and_get_node (lastReadChunk.tree, key)
-                  // |> Marshal.PtrToStructure<CRecord array>
               let crecord =
                   Marshal.PtrToStructure<CRecord> value
               printfn "%A" <| crecord              
               printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
-              // printfn "PAGES: %A" (Array.tryFind (fun p -> p) lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber])
               None
+          | Expression.ProjectionParameter.Restrict attributes, Some key ->
+              // printfn "HERE"
+              // let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
+              // let crecord =
+                  // Marshal.PtrToStructure<CRecord> value
+              // printfn "%A" <| crecord
+              // printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
+              // let x =
+              lastReadChunk.pages
+              |> Array.concat
+              |> Array.concat
+              |> Array.choose (function {entity = entity; key = key_val} when key_val = key -> Some (entity |> Map.map (fun _ v -> v.Serialize()))
+                                      | _ -> None)
+              |> Some 
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
 

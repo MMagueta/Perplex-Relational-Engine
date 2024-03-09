@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>ServerPort</RootNamespace>
+    <Configuration>Release</Configuration>
+    <Optimize>true</Optimize>
   </PropertyGroup>
 
   <ItemGroup>

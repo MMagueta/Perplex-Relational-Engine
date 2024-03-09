@@ -39,6 +39,12 @@ module Value = begin
                 if stream.Length = size then
                     VVariableString (Text.Encoding.UTF8.GetString stream)
                 else failwithf "String(%d) received the wrong size: %d" size stream.Length
+         member this.Serialize(): string * obj =
+            match this with
+            | VInteger32 v ->
+                ( "VInteger32", v)
+            | VVariableString v ->
+                ( "VVariableString", v)
 end
 
 [<RequireQualifiedAccess>]
@@ -73,6 +79,7 @@ module Expression = begin
     type t =
         | Insert of Name: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
+        | CreateConstraint of Name: string
         | Project of Relation: string * Attributes: string list
 end
 
