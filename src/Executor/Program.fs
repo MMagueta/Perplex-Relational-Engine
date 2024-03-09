@@ -55,34 +55,39 @@ module Runner =
         | Update
         | Minus of int
 
-    let rec execute (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
+    let rec execute (stream: System.IO.FileStream option) (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
         match expression with
         | Expression.Insert(relationName, fields) ->
             
-            let (Entity.Relation (tableInfo, _)) = schema.[relationName]
+            let (Entity.Relation (_tableInfo, _)) = schema.[relationName]
 
-            fields
-            |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
-            // |> createRow logger relationName schema
-            |> IO.Write.Disk.writeFact
-                schema
-                relationName
-                None
-                // (Schema.TableByteSize schema.[relationName])
-                // tableInfo.RowCount
-            let updatedSchema =
-                Map.change
-                    relationName
-                    (function
-                    | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
-                        Entity.Relation (relationAttributes, physicalOffset + 1l)
-                        |> Some
-                    | _ -> None)
+            let stream = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
+            match stream with
+            | Ok stream ->
+                fields
+                |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
+                // |> createRow logger relationName schema
+                |> IO.Write.Disk.writeFact
+                    stream
                     schema
-            
-            Schema.persist(updatedSchema)
-
-            Effect("INSERT", updatedSchema)
+                    relationName
+                    None
+                    // (Schema.TableByteSize schema.[relationName])
+                    // tableInfo.RowCount
+                let updatedSchema =
+                    Map.change
+                        relationName
+                        (function
+                        | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                            Entity.Relation (relationAttributes, physicalOffset + 1l)
+                            |> Some
+                        | _ -> None)
+                        schema
+                stream.Dispose()
+                Schema.persist(updatedSchema)
+    
+                Effect("INSERT", updatedSchema)
+            | Error _ -> failwith "Failed to acquire lock for writing."
         | Expression.CreateRelation(relationName, attributes) when (Map.tryFind relationName schema).IsNone ->
             let updatedSchema =
                 attributes // Assuming *relationName* doesn't exist already
@@ -112,26 +117,48 @@ module Runner =
                           pageNumber = pageNumber
                           slotNumber = instanceNumber }
                     | _ -> failwith "AAA"
-            let search = IO.Read.search schema relationName attributesToProject refinement indexBuilder
-            match search with
-            | Some result ->
-                Projection result
-            | None -> Projection [||]
+            // let stream =
+                // stream
+                // |> Option.map Ok
+                // |> Option.defaultValue (IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100)
+            match stream with
+            | Some stream ->
+                let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
+                match search with
+                | Some result ->
+                    Projection result
+                | None -> Projection [||]
+            | None ->
+                let stream = match IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100 with Ok stream -> stream | Error _ -> failwith "Failed to acquire lock for reading."
+                let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
+                match search with
+                | Some result ->
+                    stream.Dispose()
+                    Projection result
+                | None -> stream.Dispose()
+                          Projection [||]
+                
 
         | Expression.Update(relationName, attributeToUpdate, refinement) when (Map.tryFind relationName schema).IsSome ->
-            let (Minus attributeEvaluation) = execute logger attributeToUpdate.FieldValue schema
-            let (Projection refinementEvaluation) = execute logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
-            printfn "ATTR: %A" attributeEvaluation
-            printfn "REF: %A" refinementEvaluation
-            let refinementEvaluation =
-                Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
-            IO.Read.update schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
-            |> ignore
-            Update
+            let stream = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
+            match stream with
+            | Ok stream ->
+                let (Minus attributeEvaluation) = execute (Some stream) logger attributeToUpdate.FieldValue schema
+                let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+                printfn "ATTR: %A" attributeEvaluation
+                printfn "REF: %A" refinementEvaluation
+                let refinementEvaluation =
+                    Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
+                
+                IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
+                |> ignore
+                stream.Dispose()
+                Update
+            | Error _ -> failwithf "Failed to acquire lock for updating relation '%s'" relationName
 
         | Expression.Minus(left, right) ->
-            let leftEval = execute logger left schema
-            let rightEval = execute logger right schema
+            let leftEval = execute stream logger left schema
+            let rightEval = execute stream logger right schema
             printfn "LEFT: %A" leftEval
             printfn "RIGHT: %A" rightEval
             match leftEval, rightEval with

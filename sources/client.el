@@ -24,7 +24,7 @@
 (setq default-insert "INSERT Account (AccountNumber INTEGER 5 Balance INTEGER 500 Limit INTEGER 2000)")
 (setq insert-credit "INSERT Credit (AccountNumber INTEGER 5 Value INTEGER 100)")
 (setq insert-debit "INSERT Debit (AccountNumber INTEGER 5 Value INTEGER 100)")
-(setq default-search "PROJECT ALL Account SELECT AccountNumber = 100")
+(setq default-search "PROJECT ALL Account SELECT AccountNumber = 5")
 (setq default-sum "PROJECT SUM(AccountNumber INTEGER) Account SELECT AccountNumber = 5")
 (setq default-minus "UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 5 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 5) SELECT AccountNumber = 5")
 ;; (setq default-update "UPDATE Account SET (Balance INTEGER) (PROJECT SUM(Value INTEGER) SELECT AccountNumber = 5) (PROJECT SUM(Value INTEGER) SELECT AccountNumber = 1)")

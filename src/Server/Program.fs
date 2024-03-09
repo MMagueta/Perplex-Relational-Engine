@@ -14,7 +14,7 @@ let handle (logger: Serilog.ILogger) schema buffer bytesReceived =
     let ast = PerplexDB.Language.Main.generateAST(request)
     let mutable response = "For now there is no response apart from success."
     // try
-    let result = Executor.Runner.execute logger ast.Value schema
+    let result = Executor.Runner.execute None logger ast.Value schema
     match result with
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
