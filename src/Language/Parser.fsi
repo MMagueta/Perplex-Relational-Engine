@@ -4,6 +4,8 @@ type token =
   | RIGHT_LIM
   | LEFT_LIM
   | EOF
+  | TAKING
+  | RESTRICT
   | END
   | BEGIN
   | LOCK_WRITE
@@ -12,6 +14,7 @@ type token =
   | ALL
   | SUM
   | NOT
+  | PLUS
   | MINUS
   | EQUAL
   | SELECT
@@ -28,6 +31,8 @@ type tokenId =
     | TOKEN_RIGHT_LIM
     | TOKEN_LEFT_LIM
     | TOKEN_EOF
+    | TOKEN_TAKING
+    | TOKEN_RESTRICT
     | TOKEN_END
     | TOKEN_BEGIN
     | TOKEN_LOCK_WRITE
@@ -36,6 +41,7 @@ type tokenId =
     | TOKEN_ALL
     | TOKEN_SUM
     | TOKEN_NOT
+    | TOKEN_PLUS
     | TOKEN_MINUS
     | TOKEN_EQUAL
     | TOKEN_SELECT
@@ -55,6 +61,7 @@ type nonTerminalId =
     | NONTERM_start
     | NONTERM_File
     | NONTERM_Statement
+    | NONTERM_RestrictionQuery
     | NONTERM_Refinement
     | NONTERM_ListAttributes
     | NONTERM_Rev_Attributes

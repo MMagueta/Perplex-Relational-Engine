@@ -88,12 +88,14 @@ module Expression = begin
         | All
         | Restrict of string list
         | Sum of string
+        | Taking of Limit: int * Attributes: (string list)
 
     type Operators =
         | Equal of string * int
 
     type t =
         | Begin of string list * (t list)
+        | Plus of t * t
         | Minus of t * t
         | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>

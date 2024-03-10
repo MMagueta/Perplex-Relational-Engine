@@ -256,6 +256,19 @@ module Read = begin
                                     Some (entity, Some offset)
                                 | _ -> None)
               |> Some
+              
+          | Expression.ProjectionParameter.Taking(limit, attributes), Some (Expression.Operators.Equal (_, key)) ->
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+              lastReadChunk.pages
+              |> Array.concat
+              |> Array.concat
+              |> Array.choose (function
+                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
+                                    Some (Map.filter (fun k _ -> List.contains k attributes) entity, Some offset)
+                                | _ -> None)
+              |> Array.take limit
+              |> Some
           | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName

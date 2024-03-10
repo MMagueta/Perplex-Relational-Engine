@@ -57,6 +57,7 @@ module Runner =
         | Projection of (Map<string, Value.t>*IO.Read.OffsetNumber option) array//Language.Value.t> array
         | Update
         | Minus of int
+        | Plus of int
 
     let rec execute (stream: System.IO.FileStream option) (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
         match expression with
@@ -185,8 +186,24 @@ module Runner =
                 let (Value.VInteger32 leftVal) = (fst x.[0]).["SUM"]
                 let (Value.VInteger32 rightVal) = (fst y.[0]).["SUM"]
                 Minus (leftVal - rightVal)
+            | Projection x, Minus rightVal ->
+                let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
+                Minus (rightVal - leftVal)
             | _ -> failwith ""
 
+        (*
+        | Expression.Plus(left, right) ->
+            let leftEval = execute stream logger left schema
+            let rightEval = execute stream logger right schema
+            printfn "LEFT: %A" leftEval
+            printfn "RIGHT: %A" rightEval
+            match leftEval, rightEval with
+            | Projection x, Minus rightVal ->
+                let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
+                Plus (leftVal + rightVal)
+            | _ -> failwith ""
+        *)
+        
         | Expression.Begin (entities, commands) ->
             let mutable schema = schema
             let streams =
