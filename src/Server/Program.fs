@@ -18,13 +18,13 @@ let handle (logger: Serilog.ILogger) schema buffer ast request =
     match result with
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
-        Ok (newSchema, "Response, but for now there is nothing useful here.")
+        Ok (newSchema, FSharp.Json.Json.serialize {|Message = "Effects performed successfully."|})
     | Executor.Runner.Projection result ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-        Ok (schema, FSharp.Json.Json.serialize result)
+        Ok (schema, FSharp.Json.Json.serialize (Array.map fst result))
     | Executor.Runner.Update ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-        Ok (schema, "Updated columns")
+        Ok (schema, FSharp.Json.Json.serialize {|Message = "Updates performed successfully."|})
     
     | otherwise ->
         logger.ForContext("ExecutionContext", "Server").Error("Failed on '{@Request}': {@Otherwise}", request, otherwise)
