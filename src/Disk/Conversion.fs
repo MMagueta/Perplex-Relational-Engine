@@ -204,11 +204,10 @@ module Read = begin
                         (fun v ->
                            match v, constraint with
                            | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
-                               when relation = relationName && not <| operator.GetFunction x.[attribute] valueReplace ->
-                               printfn "BOOL: %A" (operator.GetFunction x.[attribute] valueReplace)
+                               when relation = relationName && operator.GetFunction x.[attribute] (abs valueReplace) ->
                                Some (Value.VInteger32 valueReplace)
                            | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
-                               when relation = relationName && operator.GetFunction x.[attribute] valueReplace ->
+                               when relation = relationName && not <| operator.GetFunction x.[attribute] (abs valueReplace) ->
                                raise <| ViolationOfConstraint (sprintf "Violation of constraint: '%A' is not '%s' to '%A'" (x.[attribute].RawToString()) (constraint.ToString()) valueReplace)
                            | Some (Value.VInteger32 _), None ->
                                Some (Value.VInteger32 valueReplace)

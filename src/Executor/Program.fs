@@ -240,11 +240,9 @@ module Runner =
                     else
                         Minus (leftVal - rightVal)
                 | Projection (x, _, relationName), Minus rightVal ->
-                    let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
+                    let (Value.VInteger32 leftVal) = (fst x.[0]).["InitialBalance"]
                     // For handling sum now, gotta fix the parser
-                    // if leftVal < 0 then
-                    Minus (rightVal + leftVal)
-                    // else Minus (leftVal - rightVal)
+                    Minus (leftVal + rightVal)
                 | _ -> failwith ""
             | _ ->
                 let leftEval = execute carry commit streams logger left schema
@@ -259,9 +257,7 @@ module Runner =
                 | Projection (x, _, _), Minus rightVal ->
                     let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
                     // For handling sum now, gotta fix the parser
-                    // if leftVal < 0 then
-                    Minus (rightVal + leftVal)
-                    // else Minus (leftVal - rightVal)
+                    Minus (leftVal + rightVal)
                 | _ -> failwith ""
 
         (*
