@@ -45,7 +45,7 @@ module Value = begin
                 ( "VInteger32", v)
             | VVariableString v ->
                 ( "VVariableString", v)
-         static Deserialize((name, value): string * obj): t =
+         static member Deserialize((name, value): string * obj): t =
             match name with
             | "VInteger32" ->
                 VInteger32 (value :?> int32)
