@@ -188,7 +188,10 @@ module Runner =
                 Minus (leftVal - rightVal)
             | Projection (x, _), Minus rightVal ->
                 let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
-                Minus (rightVal - leftVal)
+                // For handling sum now, gotta fix the parser
+                if leftVal < 0 then
+                    Minus (rightVal - leftVal)
+                else Minus (leftVal - rightVal)
             | _ -> failwith ""
 
         (*
