@@ -42,6 +42,10 @@ module Value = begin
         static member GetKnownTypes() =
             typedefof<t>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic)
             |> Array.filter FSharpType.IsUnion
+        member this.RawToString() =
+            match this with
+            | VVariableString s -> s
+            | VInteger32 i -> i.ToString()
          (*
          member this.Serialize(): string * obj =
             match this with
@@ -102,8 +106,8 @@ module Expression = begin
             | _ -> failwith "Function operators are implemented currently only for Integer32"
         override this.ToString() =
             match this with
-            | FGte -> "Greater Than or Equal"
-            | FEqual -> "Equal"
+            | FGte -> "greater than or equal"
+            | FEqual -> "equal"
 
     type t =
         | Begin of string list * (t list)

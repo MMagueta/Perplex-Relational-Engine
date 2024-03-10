@@ -193,6 +193,8 @@ module Read = begin
       { chunkNumber: int
         pageNumber: int
         slotNumber: int }
+      
+  exception ViolationOfConstraint of string
 
   let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) (constraint: (Expression.Operators*Expression.t list) option) =
       projection
@@ -206,7 +208,7 @@ module Read = begin
                                Some (Value.VInteger32 valueReplace)
                            | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
                                when relation = relationName && not <| operator.GetFunction x.[attribute] valueReplace ->
-                               failwithf "Violation of constraint: '%s'" <| constraint.ToString()
+                               raise <| ViolationOfConstraint (sprintf "Violation of constraint: '%A' is not '%s' to '%A'" (x.[attribute].RawToString()) (constraint.ToString()) valueReplace)
                            | Some (Value.VInteger32 _), None ->
                                Some (Value.VInteger32 valueReplace)
                            | otherwise, _ -> failwithf "Updating '%A' is currently not supported." otherwise)
