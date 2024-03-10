@@ -83,6 +83,11 @@ let rec performer logger (handler: Socket) = async {
         | None -> finishHandler handler "Nothing to do."
     with
     | :? IO.Read.ViolationOfConstraint as ex -> finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 1; Message = ex.Data0|})
+    | :? Executor.Runner.TransactionRollback as ex ->
+        // Catching since it might be useful
+        ex.Data0
+        |> List.iter (fun w -> w.Dispose())
+        finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 2; Message = "Rolling back transaction."|})
     | ex -> logger.ForContext("ExecutionContext", "Runner").Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
     return ()
 }

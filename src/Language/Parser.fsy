@@ -81,10 +81,10 @@ Statement:
         //                              |> Array.ofList, Some (Expression.Operators.Equal ($10, $12))) }
 
 RestrictionQuery:
-    //  1         2     3                4      5          6       7         8        9
-    | PROJECT TAKING LITERAL_INTEGER LEFT_LIM IDENTIFIER TYPE' RIGHT_LIM IDENTIFIER Refinement
-        { let projection = Expression.ProjectionParameter.Taking ($3, [$5])
-          Expression.Project ($8, projection, $9) }
+    //  1         2     3                4      5                  6       7         8
+    | PROJECT TAKING LITERAL_INTEGER LEFT_LIM ListAttributes RIGHT_LIM IDENTIFIER Refinement
+        { let projection = Expression.ProjectionParameter.Taking ($3, $5 |> List.map (fun (name, type') -> name))
+          Expression.Project ($7, projection, $8) }
 
 Constraint:
     | { None }
