@@ -39,12 +39,16 @@ module Value = begin
                 if stream.Length = size then
                     VVariableString (Text.Encoding.UTF8.GetString stream)
                 else failwithf "String(%d) received the wrong size: %d" size stream.Length
+        static member GetKnownTypes() =
+            typedefof<t>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic)
+            |> Array.filter FSharpType.IsUnion
+         (*
          member this.Serialize(): string * obj =
             match this with
             | VInteger32 v ->
-                ( "VInteger32", v)
+                ("VInteger32", v)
             | VVariableString v ->
-                ( "VVariableString", v)
+                ("VVariableString", v)
          static Deserialize((name, value): string * obj): t =
             match name with
             | "VInteger32" ->
@@ -52,6 +56,7 @@ module Value = begin
             | "VVariableString" ->
                 VVariableString (value :?> string)
             | otherwise -> failwithf "Unexpected type casting: %s" otherwise
+         *)
 end
 
 [<RequireQualifiedAccess>]

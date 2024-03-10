@@ -1,5 +1,6 @@
 ﻿namespace Executor
 
+open System
 open System.IO
 open Serilog
 
@@ -53,7 +54,7 @@ module Runner =
         | Effect of
             Kind: string *
             Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
-        | Projection of (Map<string, (string*obj)>*IO.Read.OffsetNumber option) array//Language.Value.t> array
+        | Projection of (Map<string, Value.t>*IO.Read.OffsetNumber option) array//Language.Value.t> array
         | Update
         | Minus of int
 
@@ -124,13 +125,13 @@ module Runner =
                 // |> Option.map Ok
                 // |> Option.defaultValue (IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100)
             match stream with
-            | Some stream ->
+            | Some stream when stream.Name.Contains relationName ->
                 let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
                 match search with
                 | Some result ->
                     Projection result
                 | None -> Projection [||]
-            | None ->
+            | Some _ | None ->
                 let stream = match IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100 with Ok stream -> stream | Error _ -> failwith "Failed to acquire lock for reading."
                 let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
                 match search with
@@ -148,8 +149,6 @@ module Runner =
                 let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                 printfn "ATTR: %A" attributeEvaluation
                 printfn "REF: %A" refinementEvaluation
-                let refinementEvaluation =
-                    Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
                 // BUG: Stream is closing on updates, but it should not be SOME since the start
                 if stream.CanWrite then
                     IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
@@ -169,8 +168,6 @@ module Runner =
                     let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                     printfn "ATTR: %A" attributeEvaluation
                     printfn "REF: %A" refinementEvaluation
-                    let refinementEvaluation =
-                        Array.map (fun (map: Map<string, string*obj>, (offset: IO.Read.OffsetNumber option)) -> (Map.map (fun _ v -> Value.t.Deserialize v) map, offset)) refinementEvaluation
                     
                     IO.Read.update stream schema relationName attributeToUpdate.FieldName refinementEvaluation attributeEvaluation
                     |> ignore
@@ -185,9 +182,9 @@ module Runner =
             printfn "RIGHT: %A" rightEval
             match leftEval, rightEval with
             | Projection x, Projection y ->
-                let (_, leftVal) = (fst x.[0]).["SUM"]
-                let (_, rightVal) = (fst y.[0]).["SUM"]
-                Minus ((leftVal :?> int) - (rightVal :?> int))
+                let (Value.VInteger32 leftVal) = (fst x.[0]).["SUM"]
+                let (Value.VInteger32 rightVal) = (fst y.[0]).["SUM"]
+                Minus (leftVal - rightVal)
             | _ -> failwith ""
 
         | Expression.Begin (entities, commands) ->

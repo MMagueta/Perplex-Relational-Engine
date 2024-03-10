@@ -21,7 +21,7 @@ let handle (logger: Serilog.ILogger) schema buffer ast request =
         Ok (newSchema, "Response, but for now there is nothing useful here.")
     | Executor.Runner.Projection result ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-        Ok (schema, System.Text.Json.JsonSerializer.Serialize (result, System.Text.Json.JsonSerializerOptions.Default))
+        Ok (schema, FSharp.Json.Json.serialize result)
     | Executor.Runner.Update ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
         Ok (schema, "Updated columns")

@@ -238,10 +238,11 @@ module Read = begin
               |> Array.concat
               |> Array.choose (function
                                 | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    Some (entity.[attr], offset)
+                                    let value = entity.[attr]
+                                    Some (value, offset)
                                 | _ -> None)
               |> Array.sumBy (fun (Value.VInteger32 x, _) -> x)
-              |> fun x -> ([|(Map.empty |> Map.add "SUM" ("VInteger32", box x), None)|])
+              |> fun x -> ([|(Map.empty |> Map.add "SUM" (Value.VInteger32 x), None)|])
               |> Some
           | Expression.ProjectionParameter.All, Some (Expression.Operators.Equal (_, key)) ->
               let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
@@ -251,7 +252,8 @@ module Read = begin
               |> Array.concat
               |> Array.choose (function
                                 | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
+                                    //Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
+                                    Some (entity, Some offset)
                                 | _ -> None)
               |> Some
           | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
