@@ -4,6 +4,9 @@ type token =
   | RIGHT_LIM
   | LEFT_LIM
   | EOF
+  | AT
+  | GTE
+  | CONSTRAINT
   | TAKING
   | RESTRICT
   | END
@@ -31,6 +34,9 @@ type tokenId =
     | TOKEN_RIGHT_LIM
     | TOKEN_LEFT_LIM
     | TOKEN_EOF
+    | TOKEN_AT
+    | TOKEN_GTE
+    | TOKEN_CONSTRAINT
     | TOKEN_TAKING
     | TOKEN_RESTRICT
     | TOKEN_END
@@ -62,7 +68,10 @@ type nonTerminalId =
     | NONTERM_File
     | NONTERM_Statement
     | NONTERM_RestrictionQuery
+    | NONTERM_Constraint
+    | NONTERM_Operator
     | NONTERM_Refinement
+    | NONTERM_LocalizedIdentifier
     | NONTERM_ListAttributes
     | NONTERM_Rev_Attributes
     | NONTERM_ListValues

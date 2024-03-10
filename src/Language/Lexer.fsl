@@ -37,6 +37,9 @@ rule tokenStream = parse
 | "SET"          { Parser.SET }
 | "ALL"          { Parser.ALL }
 | "RESTRICT"     { Parser.RESTRICT }
+| "CONSTRAINT"   { Parser.CONSTRAINT }
+| ">="           { Parser.GTE }
+| '@'            { Parser.AT }
 | "TAKING"       { Parser.TAKING }
 | ('='|"EQUAL")  { Parser.EQUAL }
 | ('-'|"MINUS")  { Parser.MINUS }

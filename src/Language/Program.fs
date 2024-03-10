@@ -34,6 +34,7 @@ module Main =
                         (PROJECT TAKING 1 (Balance INTEGER) Account SELECT AccountNumber = 1
 	                      - (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1
 	                         - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1)) SELECT AccountNumber = 1
+                        CONSTRAINT >= Account@Limit
                     END"
         |> printfn "%A"
 

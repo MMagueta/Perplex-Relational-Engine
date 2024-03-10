@@ -14,7 +14,7 @@ let mutable schema =
 
 let handle (logger: Serilog.ILogger) schema buffer ast request =
     // try
-    let result = Executor.Runner.execute None logger ast schema
+    let result = Executor.Runner.execute [] logger ast schema
     match result with
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")

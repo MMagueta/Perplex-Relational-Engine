@@ -92,6 +92,18 @@ module Expression = begin
 
     type Operators =
         | Equal of string * int
+        | FEqual
+        | Gte of string * int
+        | FGte
+        member this.GetFunction (value: Value.t) =
+            match this, value with
+            | FGte, Value.VInteger32 i -> ((>=) i)
+            | FEqual, Value.VInteger32 i -> ((=) i)
+            | _ -> failwith "Function operators are implemented currently only for Integer32"
+        override this.ToString() =
+            match this with
+            | FGte -> "Greater Than or Equal"
+            | FEqual -> "Equal"
 
     type t =
         | Begin of string list * (t list)
@@ -100,8 +112,9 @@ module Expression = begin
         | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
         | CreateConstraint of Name: string
-        | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option
+        | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option * Constraint: (Operators*t list) option // LocalizedIdentifier list on the last t list
         | Project of Relation: string * Attributes: ProjectionParameter * Refinement: Operators option
+        | LocalizedIdentifier of Relation: string * Attribute: string
         | LockRead of t
         | LockWrite of t
     and UpdateFieldInfo =

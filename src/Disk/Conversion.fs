@@ -49,9 +49,9 @@ module Write = begin
     let rec lockedStream path attempts =
         if attempts > 0 then
             let mutable stream: System.IO.FileStream = null
-            try stream <- new System.IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.ReadWrite, IO.FileShare.Inheritable); Ok stream
+            try stream <- new System.IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.ReadWrite, IO.FileShare.ReadWrite); Ok stream
             with :? IOException ->
-                if isNull stream then Async.Sleep 10 |> Async.RunSynchronously; lockedStream path (attempts - 1)
+                if isNull stream then Async.Sleep 100 |> Async.RunSynchronously; lockedStream path (attempts - 1)
                 else Error ""
          else Error ""
 
@@ -65,7 +65,7 @@ module Write = begin
             // Stuck with FileShare because of Lock being not available for mac
             // Replace this later with regional locking instead, right now locks the whole file
             // use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.Write, IO.FileShare.Read) in
-            let binaryStream = new IO.BinaryWriter(stream) in
+            let binaryStream = IO.BinaryWriter(stream) in
             // logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
             let offset =
                 match position with
@@ -77,7 +77,7 @@ module Write = begin
             let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
             binaryStream.Write content
             binaryStream.Flush()
-            binaryStream.Dispose()
+            //binaryStream.Dispose()
         | _ -> ()
 
   end  
@@ -194,18 +194,26 @@ module Read = begin
         pageNumber: int
         slotNumber: int }
 
-  let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) =
+  let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) (constraint: (Expression.Operators*Expression.t list) option) =
       projection
       |> Array.map (fun (x, (offset: OffsetNumber option)) ->
                     Map.change
                         attributeToUpdate
-                        (function
-                           | (Some (Value.VInteger32 _)) ->
+                        (fun v ->
+                           match v, constraint with
+                           | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
+                               when relation = relationName && operator.GetFunction x.[attribute] valueReplace ->
                                Some (Value.VInteger32 valueReplace)
-                           | otherwise -> failwithf "Updating '%A' is currently not supported." otherwise)
+                           | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
+                               when relation = relationName && not <| operator.GetFunction x.[attribute] valueReplace ->
+                               failwithf "Violation of constraint: '%s'" <| constraint.ToString()
+                           | Some (Value.VInteger32 _), None ->
+                               Some (Value.VInteger32 valueReplace)
+                           | otherwise, _ -> failwithf "Updating '%A' is currently not supported." otherwise)
                         x
                     |> fun x -> (x, offset))
       |> Array.map (fun (x, offset) -> Write.Disk.writeFact stream schema relationName offset x)
+      
 
   let search stream (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
       match Map.tryFind entityName schema with
