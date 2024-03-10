@@ -14,18 +14,20 @@ let mutable schema =
 
 let handle (logger: Serilog.ILogger) schema ast request =
     // try
-    let result = Executor.Runner.execute [] logger ast schema
+    let result = Executor.Runner.execute None true [] logger ast schema
     match result with
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
         Ok (newSchema, FSharp.Json.Json.serialize {|Message = "Effects performed successfully."|})
-    | Executor.Runner.Projection (result, _) ->
+    | Executor.Runner.Projection (result, _, _) ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
         Ok (schema, FSharp.Json.Json.serialize (Array.map fst result))
     | Executor.Runner.Update ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
         Ok (schema, FSharp.Json.Json.serialize {|Message = "Updates performed successfully."|})
-    
+    | Executor.Runner.Insert(newSchema, _, relationName) ->
+        logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
+        Ok (newSchema, FSharp.Json.Json.serialize {|Message = $"Successfully stored new record on relvar '{relationName}'."|})
     | otherwise ->
         logger.ForContext("ExecutionContext", "Server").Error("Failed on '{@Request}': {@Otherwise}", request, otherwise)
         Error $"Engine unexpected return: '{otherwise}'"
@@ -84,10 +86,7 @@ let rec performer logger (handler: Socket) = async {
     with
     | :? IO.Read.ViolationOfConstraint as ex -> finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 1; Message = ex.Data0|})
     | :? Executor.Runner.TransactionRollback as ex ->
-        // Catching since it might be useful
-        ex.Data0
-        |> List.iter (fun w -> w.Dispose())
-        finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 2; Message = "Rolling back transaction."|})
+        finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 2; Message = ex.Message|})
     | ex -> logger.ForContext("ExecutionContext", "Runner").Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
     return ()
 }

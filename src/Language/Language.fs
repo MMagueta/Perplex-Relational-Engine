@@ -101,7 +101,7 @@ module Expression = begin
         | FGte
         member this.GetFunction (value: Value.t) =
             match this, value with
-            | FGte, Value.VInteger32 i -> ((<) i)
+            | FGte, Value.VInteger32 i -> ((>=) i)
             | FEqual, Value.VInteger32 i -> ((=) i)
             | _ -> failwith "Function operators are implemented currently only for Integer32"
         override this.ToString() =

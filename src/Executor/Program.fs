@@ -41,7 +41,7 @@ module Runner =
 
     open FsToolkit.ErrorHandling
 
-    exception TransactionRollback of System.IO.FileStream list
+    exception TransactionRollback of Reason: string
 
     let _ =
         Log.Logger <-
@@ -53,47 +53,87 @@ module Runner =
                 .CreateLogger()
 
     type ExecutionResult =
+        | Insert of NewSchema: Schema.t * IO.Write.Fact * RelationName: string
         | Effect of
             Kind: string *
             Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
-        | Projection of (Map<string, Value.t>*IO.Read.OffsetNumber option) array * Schema.t
+        | Projection of (Map<string, Value.t>*IO.Read.OffsetNumber option) array * Schema.t * RelationName: string
         | Update
         | Minus of int
         | Plus of int
 
-    let rec execute (streams: System.IO.FileStream list) (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
+    let rec execute (carry: (IO.Write.Fact * string) option) commit (streams: FileStream list) (logger: ILogger) (expression: Expression.t) (schema: Schema.t) =
         match expression with
         | Expression.Insert(relationName, fields) ->
-            
             let (Entity.Relation (_tableInfo, _)) = schema.[relationName]
-
-            let stream = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
-            match stream with
-            | Ok stream ->
-                fields
-                |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
-                // |> createRow logger relationName schema
-                |> IO.Write.Disk.writeFact
-                    stream
-                    schema
-                    relationName
-                    None
-                    // (Schema.TableByteSize schema.[relationName])
-                    // tableInfo.RowCount
-                let updatedSchema =
-                    Map.change
-                        relationName
-                        (function
-                        | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
-                            Entity.Relation (relationAttributes, physicalOffset + 1l)
-                            |> Some
-                        | _ -> None)
+            match List.tryFind (fun (stream: FileStream) -> stream.Name.Contains relationName) streams with
+            | Some stream ->
+                let fact: IO.Write.Fact = fields |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
+                if commit then
+                    fact
+                    |> IO.Write.Disk.writeFact
+                        stream
                         schema
-                stream.Dispose()
-                Schema.persist(updatedSchema)
-    
-                Effect("INSERT", updatedSchema)
-            | Error _ -> failwith "Failed to acquire lock for writing."
+                        relationName
+                        None
+                    let updatedSchema =
+                        Map.change
+                            relationName
+                            (function
+                            | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                                Entity.Relation (relationAttributes, physicalOffset + 1l)
+                                |> Some
+                            | _ -> None)
+                            schema
+                    Schema.persist(updatedSchema)
+        
+                    Insert(updatedSchema, fact, relationName)
+                else
+                    let updatedSchema =
+                        Map.change
+                            relationName
+                            (function
+                            | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                                Entity.Relation (relationAttributes, physicalOffset + 1l)
+                                |> Some
+                            | _ -> None)
+                            schema
+                    Insert(updatedSchema, fact, relationName)
+            | None ->
+                let (Ok stream) = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
+                let fact: IO.Write.Fact = fields |> Array.fold (fun acc elem -> Map.add elem.FieldName elem.FieldValue acc) Map.empty
+                if commit then
+                    IO.Write.Disk.writeFact
+                        stream
+                        schema
+                        relationName
+                        None
+                        fact
+                    let updatedSchema =
+                        Map.change
+                            relationName
+                            (function
+                            | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                                Entity.Relation (relationAttributes, physicalOffset + 1l)
+                                |> Some
+                            | _ -> None)
+                            schema
+                    Schema.persist(updatedSchema)
+                    stream.Dispose()
+                    Insert(updatedSchema, fact, relationName)
+                else
+                    let updatedSchema =
+                        Map.change
+                            relationName
+                            (function
+                            | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                                Entity.Relation (relationAttributes, physicalOffset + 1l)
+                                |> Some
+                            | _ -> None)
+                            schema
+                    stream.Dispose()
+                    Insert(updatedSchema, fact, relationName)
+
         | Expression.CreateRelation(relationName, attributes) when (Map.tryFind relationName schema).IsNone ->
             let updatedSchema =
                 attributes // Assuming *relationName* doesn't exist already
@@ -132,24 +172,24 @@ module Runner =
                 let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
                 match search with
                 | Some result ->
-                    Projection (result, schema)
-                | None -> Projection ([||], schema)
+                    Projection (result, schema, relationName)
+                | None -> Projection ([||], schema, relationName)
             | None ->
                 let stream = match IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100 with Ok stream -> stream | Error _ -> failwith "Failed to acquire lock for reading."
                 let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
                 match search with
                 | Some result ->
                     stream.Dispose()
-                    Projection (result, schema)
+                    Projection (result, schema, relationName)
                 | None -> stream.Dispose()
-                          Projection ([||], schema)
+                          Projection ([||], schema, relationName)
 
                 
         | Expression.Update(relationName, attributeToUpdate, refinement, constraint) when (Map.tryFind relationName schema).IsSome ->
             match List.tryFind (fun (stream: FileStream) -> stream.Name.Contains relationName) streams with
             | Some stream ->
-                let (Minus attributeEvaluation) = execute streams logger attributeToUpdate.FieldValue schema
-                let (Projection (refinementEvaluation, schema)) = execute streams logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+                let (Minus attributeEvaluation) = execute carry commit streams logger attributeToUpdate.FieldValue schema
+                let (Projection (refinementEvaluation, schema, _relationName)) = execute carry commit streams logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                 printfn "ATTR: %A" attributeEvaluation
                 printfn "REF: %A" refinementEvaluation
                 // BUG: Stream is closing on updates, but it should not be SOME since the start
@@ -167,8 +207,8 @@ module Runner =
                 let stream = IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100
                 match stream with
                 | Ok stream ->
-                    let (Minus attributeEvaluation) = execute [stream] logger attributeToUpdate.FieldValue schema
-                    let (Projection (refinementEvaluation, schema)) = execute [stream] logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+                    let (Minus attributeEvaluation) = execute carry commit [stream] logger attributeToUpdate.FieldValue schema
+                    let (Projection (refinementEvaluation, schema, _relationName)) = execute carry commit [stream] logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                     printfn "ATTR: %A" attributeEvaluation
                     printfn "REF: %A" refinementEvaluation
                     
@@ -179,22 +219,50 @@ module Runner =
                 | Error _ -> failwithf "Failed to acquire lock for updating relation '%s'" relationName
 
         | Expression.Minus(left, right) ->
-            let leftEval = execute streams logger left schema
-            let rightEval = execute streams logger right schema
-            printfn "LEFT: %A" leftEval
-            printfn "RIGHT: %A" rightEval
-            match leftEval, rightEval with
-            | Projection (x, _), Projection (y, _) ->
-                let (Value.VInteger32 leftVal) = (fst x.[0]).["SUM"]
-                let (Value.VInteger32 rightVal) = (fst y.[0]).["SUM"]
-                Minus (leftVal - rightVal)
-            | Projection (x, _), Minus rightVal ->
-                let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
-                // For handling sum now, gotta fix the parser
-                // if leftVal < 0 then
-                Minus (rightVal + leftVal)
-                // else Minus (leftVal - rightVal)
-            | _ -> failwith ""
+            match carry with
+            | Some (map, relationName) when not <| Map.isEmpty map ->
+                let leftEval = execute carry commit streams logger left schema
+                let rightEval = execute carry commit streams logger right schema
+                printfn "LEFT: %A" leftEval
+                printfn "RIGHT: %A" rightEval
+                match leftEval, rightEval with
+                | Projection (x, _, relationNameX), Projection (y, _, relationNameY) ->
+                    let (Value.VInteger32 leftVal) = (fst x.[0]).["SUM"]
+                    let (Value.VInteger32 rightVal) = (fst y.[0]).["SUM"]
+                    if relationName = relationNameX || relationName = relationNameY then
+                        let remainderFromTransaction: int =
+                            Map.fold (fun acc k v ->
+                                match v with
+                                | Value.VInteger32 i ->
+                                    if k = "Value" && relationName = "Credit" then acc + i elif k = "Value" && relationName = "Debit" then acc - i else acc
+                                | Value.VVariableString _ -> acc) 0 map
+                        Minus (leftVal - rightVal + remainderFromTransaction)
+                    else
+                        Minus (leftVal - rightVal)
+                | Projection (x, _, relationName), Minus rightVal ->
+                    let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
+                    // For handling sum now, gotta fix the parser
+                    // if leftVal < 0 then
+                    Minus (rightVal + leftVal)
+                    // else Minus (leftVal - rightVal)
+                | _ -> failwith ""
+            | _ ->
+                let leftEval = execute carry commit streams logger left schema
+                let rightEval = execute carry commit streams logger right schema
+                printfn "LEFT: %A" leftEval
+                printfn "RIGHT: %A" rightEval
+                match leftEval, rightEval with
+                | Projection (x, _, _), Projection (y, _, _) ->
+                    let (Value.VInteger32 leftVal) = (fst x.[0]).["SUM"]
+                    let (Value.VInteger32 rightVal) = (fst y.[0]).["SUM"]
+                    Minus (leftVal - rightVal)
+                | Projection (x, _, _), Minus rightVal ->
+                    let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
+                    // For handling sum now, gotta fix the parser
+                    // if leftVal < 0 then
+                    Minus (rightVal + leftVal)
+                    // else Minus (leftVal - rightVal)
+                | _ -> failwith ""
 
         (*
         | Expression.Plus(left, right) ->
@@ -211,17 +279,12 @@ module Runner =
         
         | Expression.Begin (entities, commands) ->
             let mutable schema = schema
+            let mutable carry = None
             let streams =
                 List.traverseResultM (fun relationName -> IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100) entities
                 |> function Ok streams -> streams
                           | Error err -> raise (System.Exception err)
 
-            let walStreams = Async.Parallel (List.map (fun (s: FileStream) -> async {
-                                                         let stream = new IO.FileStream(s.Name + ".wal", IO.FileMode.OpenOrCreate, IO.FileAccess.Write)
-                                                         do! s.CopyToAsync(stream) |> Async.AwaitTask
-                                                         return stream }) streams)
-                             |> Async.RunSynchronously
-                             |> List.ofArray
             try
                 let reducer acc cmd =
                     match cmd with
@@ -230,18 +293,20 @@ module Runner =
                         acc
                     | Expression.Update (_, _, _, _) ->
                         let _ =
-                            execute walStreams logger cmd schema
+                            execute carry commit streams logger cmd schema
                         acc
                     | Expression.Insert (_, _) ->
                         let result =
-                            execute walStreams logger cmd schema
+                            execute carry false streams logger cmd schema
                         match result with
-                        | ExecutionResult.Effect(_, newSchema) -> schema <- newSchema
+                        | ExecutionResult.Insert(newSchema, stringMap, relationInserted) ->
+                            carry <- Some (stringMap, relationInserted)
+                            //schema <- newSchema
                         | _ -> ()
                         acc
                     | Expression.Project (_, _, _) ->
                         let result =
-                            execute walStreams logger cmd schema
+                            execute carry commit streams logger cmd schema
                         match result with
                         | ExecutionResult.Projection _ as projection -> Some projection
                         | _ -> acc
@@ -250,23 +315,43 @@ module Runner =
                         acc
                     | otherwise -> logger.Error ("Did not expect '{@Otherwise}' in a transact block.", otherwise)
                                    acc
-    
-                let zip = List.zip walStreams streams
-    
-                Async.Parallel (List.map (fun (w: FileStream, s: FileStream) ->
-                                            async { return! w.CopyToAsync(s) |> Async.AwaitTask }) zip)
-                |> Async.RunSynchronously
-                |> ignore
-
-                let result = List.fold reducer None commands
-                List.iter (fun (w: System.IO.FileStream, s: System.IO.FileStream) -> s.Dispose(); w.Dispose()) zip
                 
-                Option.defaultValue (Effect("TRANSACTION BLOCK EXECUTED", schema)) result
-
-            with _ -> 
-                List.iter (fun (s: System.IO.FileStream) -> s.Dispose()) streams
+                match List.fold reducer None commands, carry with
+                | Some result, Some (fact, relationName) ->
+                    let stream = List.find (fun (s: FileStream) -> s.Name.Contains relationName) streams
+                    IO.Write.Disk.writeFact
+                        stream
+                        schema
+                        relationName
+                        None
+                        fact
+                    let updatedSchema =
+                        Map.change
+                            relationName
+                            (function
+                            | (Some(Entity.Relation (relationAttributes, physicalOffset))) ->
+                                Entity.Relation (relationAttributes, physicalOffset + 1l)
+                                |> Some
+                            | _ -> None)
+                            schema
+                    Schema.persist(updatedSchema)
+                    
+                    List.iter (fun (s: FileStream) -> s.Dispose()) streams
+                    
+                    result
+                | _ ->
+                    
+                    List.iter (fun (s: FileStream) -> s.Dispose()) streams
+                    Effect("FINISHED TRANSACTION BLOCK", schema)
+                    
+            with ex -> //Rollback
+                List.iter (fun (s: FileStream) -> s.Dispose()) streams
                 
-                raise <| TransactionRollback walStreams
+                logger.ForContext("ExecutionContext", "Executor").Fatal("Rolling back transaction due to: {@Error}", ex.Message)
+                
+                let reason = ex.Message
+                
+                raise <| TransactionRollback reason
 
         | otherwise -> failwithf "NOT EXPECTING %A" otherwise
             
