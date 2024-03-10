@@ -54,7 +54,7 @@ module Runner =
         | Effect of
             Kind: string *
             Schema.t (* Make this a type later so it's possible to know what generated the effect, like INSERTS *)
-        | Projection of (Map<string, Value.t>*IO.Read.OffsetNumber option) array//Language.Value.t> array
+        | Projection of (Map<string, Value.t>*IO.Read.OffsetNumber option) array * Schema.t
         | Update
         | Minus of int
         | Plus of int
@@ -130,24 +130,24 @@ module Runner =
                 let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
                 match search with
                 | Some result ->
-                    Projection result
-                | None -> Projection [||]
+                    Projection (result, schema)
+                | None -> Projection ([||], schema)
             | Some _ | None ->
                 let stream = match IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100 with Ok stream -> stream | Error _ -> failwith "Failed to acquire lock for reading."
                 let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
                 match search with
                 | Some result ->
                     stream.Dispose()
-                    Projection result
+                    Projection (result, schema)
                 | None -> stream.Dispose()
-                          Projection [||]
+                          Projection ([||], schema)
 
                 
         | Expression.Update(relationName, attributeToUpdate, refinement) when (Map.tryFind relationName schema).IsSome ->
             match stream with
             | Some stream ->
                 let (Minus attributeEvaluation) = execute (Some stream) logger attributeToUpdate.FieldValue schema
-                let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+                let (Projection (refinementEvaluation, schema)) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                 printfn "ATTR: %A" attributeEvaluation
                 printfn "REF: %A" refinementEvaluation
                 // BUG: Stream is closing on updates, but it should not be SOME since the start
@@ -166,7 +166,7 @@ module Runner =
                 match stream with
                 | Ok stream ->
                     let (Minus attributeEvaluation) = execute (Some stream) logger attributeToUpdate.FieldValue schema
-                    let (Projection refinementEvaluation) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
+                    let (Projection (refinementEvaluation, schema)) = execute (Some stream) logger (Expression.Project (relationName, Expression.ProjectionParameter.All, refinement)) schema
                     printfn "ATTR: %A" attributeEvaluation
                     printfn "REF: %A" refinementEvaluation
                     
@@ -182,11 +182,11 @@ module Runner =
             printfn "LEFT: %A" leftEval
             printfn "RIGHT: %A" rightEval
             match leftEval, rightEval with
-            | Projection x, Projection y ->
+            | Projection (x, _), Projection (y, _) ->
                 let (Value.VInteger32 leftVal) = (fst x.[0]).["SUM"]
                 let (Value.VInteger32 rightVal) = (fst y.[0]).["SUM"]
                 Minus (leftVal - rightVal)
-            | Projection x, Minus rightVal ->
+            | Projection (x, _), Minus rightVal ->
                 let (Value.VInteger32 leftVal) = (fst x.[0]).["Balance"]
                 Minus (rightVal - leftVal)
             | _ -> failwith ""
@@ -210,33 +210,39 @@ module Runner =
                 List.traverseResultM (fun relationName -> IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100) entities
                 |> function Ok streams -> streams
                           | Error err -> raise (System.Exception err)
-            for cmd in commands do
+            
+            let reducer acc cmd =
                 match cmd with
                 | Expression.LockRead _ ->
                     logger.Warning "Lock for reads not considered in blocks as of now. WIP"
-                    ()
+                    acc
                 | Expression.Update (relationName, _, _) ->
                     let result =
                         execute (Some <| streams.Item (List.tryFindIndex ((=) relationName) entities |> function Some i -> i | None -> failwith "Could not find index")) logger cmd schema
-                    match result with
-                    | ExecutionResult.Update -> ()
-                    | _ -> ()
+                    acc
                 | Expression.Insert (relationName, _) ->
                     let result =
                         execute (Some <| streams.Item (List.tryFindIndex ((=) relationName) entities |> function Some i -> i | None -> failwith "Could not find index")) logger cmd schema
                     match result with
                     | ExecutionResult.Effect(_, newSchema) -> schema <- newSchema
                     | _ -> ()
+                    acc
+                | Expression.Project (relationName, _, _) ->
+                    let result =
+                        execute (Some <| streams.Item (List.tryFindIndex ((=) relationName) entities |> function Some i -> i | None -> failwith "Could not find index")) logger cmd schema
+                    match result with
+                    | ExecutionResult.Projection _ as projection -> Some projection
+                    | _ -> acc
                 | Expression.LockWrite _ ->
                     logger.Warning "Lock for writes is currently only available for updates and inserts. WIP"
-                    ()
+                    acc
                 | otherwise -> logger.Error ("Did not expect '{@Otherwise}' in a transact block.", otherwise)
-            done
-
+                               acc
+            
+            let result = List.fold reducer None commands
             List.iter (fun (s: System.IO.FileStream) -> s.Dispose()) streams
             
-            Effect("BLOCK", schema)
-            
+            Option.defaultValue (Effect("TRANSACTION BLOCK EXECUTED", schema)) result
 
         | otherwise -> failwithf "NOT EXPECTING %A" otherwise
             

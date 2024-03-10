@@ -19,7 +19,7 @@ let handle (logger: Serilog.ILogger) schema buffer ast request =
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
         Ok (newSchema, FSharp.Json.Json.serialize {|Message = "Effects performed successfully."|})
-    | Executor.Runner.Projection result ->
+    | Executor.Runner.Projection (result, _) ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
         Ok (schema, FSharp.Json.Json.serialize (Array.map fst result))
     | Executor.Runner.Update ->
