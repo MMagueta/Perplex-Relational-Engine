@@ -277,7 +277,7 @@ module Read = begin
                                 | {entity = entity; key = key_val; offset = offset} when key_val = key ->
                                     Some (Map.filter (fun k _ -> List.contains k attributes) entity, Some offset)
                                 | _ -> None)
-              |> Array.take limit
+              |> fun elems -> if elems.Length < limit then Array.take elems.Length elems else Array.take limit elems
               |> Some
           | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
           
