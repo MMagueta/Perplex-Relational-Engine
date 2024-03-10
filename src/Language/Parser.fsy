@@ -55,6 +55,7 @@ File:
 	| Statement { Some $1 }
         
 Statement:
+    | RestrictionQuery { $1 }
 	| CREATE RELATION IDENTIFIER LEFT_LIM ListAttributes RIGHT_LIM 
 	    { Expression.CreateRelation ($3, Map.ofList $5) }
     | PROJECT LEFT_LIM ListAttributes RIGHT_LIM IDENTIFIER Refinement
