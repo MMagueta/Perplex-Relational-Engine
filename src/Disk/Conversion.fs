@@ -49,9 +49,9 @@ module Write = begin
     let rec lockedStream path attempts =
         if attempts > 0 then
             let mutable stream: System.IO.FileStream = null
-            try stream <- new System.IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.ReadWrite, IO.FileShare.ReadWrite); Ok stream
+            try stream <- new System.IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.ReadWrite, IO.FileShare.Inheritable); Ok stream
             with :? IOException ->
-                if isNull stream then Async.Sleep 100 |> Async.RunSynchronously; lockedStream path (attempts - 1)
+                if isNull stream then Async.Sleep 10 |> Async.RunSynchronously; lockedStream path (attempts - 1)
                 else Error ""
          else Error ""
 

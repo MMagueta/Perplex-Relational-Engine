@@ -38,6 +38,11 @@ module Main =
                     END"
         |> printfn "%A"
 
+        generateAST "BEGIN A B C
+        UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1) SELECT AccountNumber = 1
+        END"
+        |> printfn "%A"
+
         if argv.Length > 0 then
             Array.map (System.IO.File.ReadAllText >> generateAST) argv |> printfn "%A"
         else
