@@ -36,8 +36,14 @@ rule tokenStream = parse
 | "SUM"          { Parser.SUM }
 | "SET"          { Parser.SET }
 | "ALL"          { Parser.ALL }
+| "RESTRICT"     { Parser.RESTRICT }
+| "CONSTRAINT"   { Parser.CONSTRAINT }
+| ">="           { Parser.GTE }
+| '@'            { Parser.AT }
+| "TAKING"       { Parser.TAKING }
 | ('='|"EQUAL")  { Parser.EQUAL }
 | ('-'|"MINUS")  { Parser.MINUS }
+| ('+'|"PLUS")   { Parser.PLUS }
 | ("LOCK READ")  { Parser.LOCK_READ }
 | ("LOCK WRITE") { Parser.LOCK_WRITE }
 | ("BEGIN")      { Parser.BEGIN }

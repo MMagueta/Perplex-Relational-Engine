@@ -39,10 +39,18 @@ module Value = begin
                 if stream.Length = size then
                     VVariableString (Text.Encoding.UTF8.GetString stream)
                 else failwithf "String(%d) received the wrong size: %d" size stream.Length
+        static member GetKnownTypes() =
+            typedefof<t>.GetNestedTypes(BindingFlags.Public ||| BindingFlags.NonPublic)
+            |> Array.filter FSharpType.IsUnion
+        member this.RawToString() =
+            match this with
+            | VVariableString s -> s
+            | VInteger32 i -> i.ToString()
+         (*
          member this.Serialize(): string * obj =
             match this with
             | VInteger32 v ->
-                ( "VInteger32", v)
+                ("VInteger32", v)
             | VVariableString v ->
                 ( "VVariableString", v)
          static member Deserialize((name, value): string * obj): t =
@@ -52,6 +60,7 @@ module Value = begin
             | "VVariableString" ->
                 VVariableString (value :?> string)
             | otherwise -> failwithf "Unexpected type casting: %s" otherwise
+         *)
 end
 
 [<RequireQualifiedAccess>]
@@ -83,18 +92,33 @@ module Expression = begin
         | All
         | Restrict of string list
         | Sum of string
+        | Taking of Limit: int * Attributes: (string list)
 
     type Operators =
         | Equal of string * int
+        | FEqual
+        | Gte of string * int
+        | FGte
+        member this.GetFunction (value: Value.t) =
+            match this, value with
+            | FGte, Value.VInteger32 i -> ((>=) i)
+            | FEqual, Value.VInteger32 i -> ((=) i)
+            | _ -> failwith "Function operators are implemented currently only for Integer32"
+        override this.ToString() =
+            match this with
+            | FGte -> "greater than or equal"
+            | FEqual -> "equal"
 
     type t =
         | Begin of string list * (t list)
+        | Plus of t * t
         | Minus of t * t
         | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
         | CreateConstraint of Name: string
-        | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option
+        | Update of RelationName: string * Fields: UpdateFieldInfo * Refinement: Operators option * Constraint: (Operators*t list) option // LocalizedIdentifier list on the last t list
         | Project of Relation: string * Attributes: ProjectionParameter * Refinement: Operators option
+        | LocalizedIdentifier of Relation: string * Attribute: string
         | LockRead of t
         | LockWrite of t
     and UpdateFieldInfo =

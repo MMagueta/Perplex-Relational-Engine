@@ -25,8 +25,17 @@ module Main =
 
         generateAST "PROJECT ALL Person"
         |> printfn "%A"
+        
+        generateAST "PROJECT TAKING 1 (Balance INTEGER) Account SELECT AccountNumber = 1"
+        |> printfn "%A"
 
-        generateAST "UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1) SELECT AccountNumber = 1"
+        generateAST "BEGIN Account Debit Credit
+                        UPDATE Account SET Balance
+                        (PROJECT TAKING 1 (Balance INTEGER) Account SELECT AccountNumber = 1
+	                      - (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1
+	                         - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1)) SELECT AccountNumber = 1
+                        CONSTRAINT >= Account@Limit
+                    END"
         |> printfn "%A"
 
         generateAST "BEGIN A B C

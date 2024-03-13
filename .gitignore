@@ -6,3 +6,6 @@
 .DS_Store
 .fake
 .idea
+**/Parser.fs
+**/Parser.fsi
+**/Lexer.fs

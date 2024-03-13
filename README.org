@@ -1,5 +1,4 @@
-#+TITLE: PerplexDB
-
+#+TITLE: Perplex Relational Engine
 
 * Implementation list
 

@@ -12,20 +12,22 @@ open Executor
 let mutable schema =
     Schema.loadFromDisk()
 
-let handle (logger: Serilog.ILogger) schema buffer ast request =
+let handle (logger: Serilog.ILogger) schema ast request =
     // try
-    let result = Executor.Runner.execute None logger ast schema
+    let result = Executor.Runner.execute None true [] logger ast schema
     match result with
     | Executor.Runner.Effect (kind, newSchema) -> 
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running '{kind}'")
-        Ok (newSchema, "Response, but for now there is nothing useful here.")
-    | Executor.Runner.Projection result ->
+        Ok (newSchema, FSharp.Json.Json.serialize {|Message = "Effects performed successfully."|})
+    | Executor.Runner.Projection (result, _, _) ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-        Ok (schema, System.Text.Json.JsonSerializer.Serialize (result, System.Text.Json.JsonSerializerOptions.Default))
+        Ok (schema, FSharp.Json.Json.serialize (Array.map fst result))
     | Executor.Runner.Update ->
         logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
-        Ok (schema, "Updated columns")
-    
+        Ok (schema, FSharp.Json.Json.serialize {|Message = "Updates performed successfully."|})
+    | Executor.Runner.Insert(newSchema, _, relationName) ->
+        logger.ForContext("ExecutionContext", "Server").Information($"Finished running query '{request}'")
+        Ok (newSchema, FSharp.Json.Json.serialize {|Message = $"Successfully stored new record on relvar '{relationName}'."|})
     | otherwise ->
         logger.ForContext("ExecutionContext", "Server").Error("Failed on '{@Request}': {@Otherwise}", request, otherwise)
         Error $"Engine unexpected return: '{otherwise}'"
@@ -49,7 +51,7 @@ let rec performer logger (handler: Socket) = async {
         | Some (Language.Expression.LockWrite ast) -> 
             let rwl = new ReaderWriterLockSlim()
             if rwl.TryEnterWriteLock 100 then
-                match handle logger schema buffer ast request with
+                match handle logger schema ast request with
                 | Ok (newSchema, response) ->
                     finishHandler handler response
                     try schema <- newSchema
@@ -60,7 +62,7 @@ let rec performer logger (handler: Socket) = async {
         | Some (Language.Expression.LockRead ast) ->
             let rwl = new ReaderWriterLockSlim()
             if rwl.TryEnterReadLock 100 then
-                match handle logger schema buffer ast request with
+                match handle logger schema ast request with
                 | Ok (newSchema, response) ->
                     finishHandler handler response
                     try schema <- newSchema
@@ -71,7 +73,7 @@ let rec performer logger (handler: Socket) = async {
         | Some ((Language.Expression.Begin _) as block) ->
             let rwl = new ReaderWriterLockSlim()
             if rwl.TryEnterWriteLock 100 then
-                match handle logger schema buffer block request with
+                match handle logger schema block request with
                 | Ok (newSchema, response) ->
                     finishHandler handler response
                     try schema <- newSchema
@@ -81,7 +83,11 @@ let rec performer logger (handler: Socket) = async {
             else finishHandler handler "Failed to acquire write lock."
         | Some _ -> finishHandler handler "Requires to acquire a lock. Please use LOCK (READ|WRITE) before the query expression."
         | None -> finishHandler handler "Nothing to do."
-    with ex -> logger.ForContext("ExecutionContext", "Runner").ForContext("StackTrace", ex.StackTrace).Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
+    with
+    | :? IO.Read.ViolationOfConstraint as ex -> finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 1; Message = ex.Data0|})
+    | :? Executor.Runner.TransactionRollback as ex ->
+        finishHandler handler (FSharp.Json.Json.serialize {|ErrorCode = 2; Message = ex.Message|})
+    | ex -> logger.ForContext("ExecutionContext", "Runner").Error("{@Error}: {@Stacktrace}", ex.Message, ex.StackTrace)
     return ()
 }
 

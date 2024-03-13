@@ -65,7 +65,7 @@ module Write = begin
             // Stuck with FileShare because of Lock being not available for mac
             // Replace this later with regional locking instead, right now locks the whole file
             // use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.Write, IO.FileShare.Read) in
-            let binaryStream = new IO.BinaryWriter(stream) in
+            let binaryStream = IO.BinaryWriter(stream) in
             // logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
             let offset =
                 match position with
@@ -77,7 +77,7 @@ module Write = begin
             let _ = binaryStream.Seek(offset, SeekOrigin.Begin)
             binaryStream.Write content
             binaryStream.Flush()
-            binaryStream.Dispose()
+            //binaryStream.Dispose()
         | _ -> ()
 
   end  
@@ -193,16 +193,25 @@ module Read = begin
       { chunkNumber: int
         pageNumber: int
         slotNumber: int }
+      
+  exception ViolationOfConstraint of string
 
-  let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) =
+  let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) (constraint: (Expression.Operators*Expression.t list) option) =
       projection
       |> Array.map (fun (x, (offset: OffsetNumber option)) ->
                     Map.change
                         attributeToUpdate
-                        (function
-                           | (Some (Value.VInteger32 _)) ->
+                        (fun v ->
+                           match v, constraint with
+                           | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
+                               when relation = relationName && operator.GetFunction x.[attribute] (abs valueReplace) ->
                                Some (Value.VInteger32 valueReplace)
-                           | otherwise -> failwithf "Updating '%A' is currently not supported." otherwise)
+                           | Some (Value.VInteger32 _), Some (operator, [Expression.LocalizedIdentifier(relation, attribute)])
+                               when relation = relationName && not <| operator.GetFunction x.[attribute] (abs valueReplace) ->
+                               raise <| ViolationOfConstraint (sprintf "Violation of constraint: '%A' is not '%s' to '%A'" (x.[attribute].RawToString()) (constraint.ToString()) valueReplace)
+                           | Some (Value.VInteger32 _), None ->
+                               Some (Value.VInteger32 valueReplace)
+                           | otherwise, _ -> failwithf "Updating '%A' is currently not supported." otherwise)
                         x
                     |> fun x -> (x, offset))
       |> Array.map (fun (x, offset) -> Write.Disk.writeFact stream schema relationName offset x)
@@ -238,10 +247,11 @@ module Read = begin
               |> Array.concat
               |> Array.choose (function
                                 | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    Some (entity.[attr], offset)
+                                    let value = entity.[attr]
+                                    Some (value, offset)
                                 | _ -> None)
               |> Array.sumBy (fun (Value.VInteger32 x, _) -> x)
-              |> fun x -> ([|(Map.empty |> Map.add "SUM" ("VInteger32", box x), None)|])
+              |> fun x -> ([|(Map.empty |> Map.add "SUM" (Value.VInteger32 x), None)|])
               |> Some
           | Expression.ProjectionParameter.All, Some (Expression.Operators.Equal (_, key)) ->
               let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
@@ -251,8 +261,22 @@ module Read = begin
               |> Array.concat
               |> Array.choose (function
                                 | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
+                                    //Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
+                                    Some (entity, Some offset)
                                 | _ -> None)
+              |> Some
+              
+          | Expression.ProjectionParameter.Taking(limit, attributes), Some (Expression.Operators.Equal (_, key)) ->
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+              lastReadChunk.pages
+              |> Array.concat
+              |> Array.concat
+              |> Array.choose (function
+                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
+                                    Some (Map.filter (fun k _ -> List.contains k attributes) entity, Some offset)
+                                | _ -> None)
+              |> fun elems -> if elems.Length < limit then Array.take elems.Length elems else Array.take limit elems
               |> Some
           | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
           
