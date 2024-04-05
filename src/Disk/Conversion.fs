@@ -1,6 +1,8 @@
 ﻿namespace IO
+// #nowarn "9"
 
 open System
+open System.Buffers.Text
 open Microsoft.FSharp.NativeInterop
 
 module Utilities = begin
@@ -116,14 +118,8 @@ module Read = begin
 
   [<RequireQualifiedAccessAttribute>]
   module Tree =
-      //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      //extern void print_leaves(void* _tree);
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       extern void* insert(void* _tree, int _key, int _chunkNumber, int _pageNumber, int _slotNumber)
-      //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      //extern void find_and_print(void * _tree, int _key, bool _verbose)
-      //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      //extern void* find_and_get_value(void * _tree, int _key, bool _verbose)
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       extern IntPtr find_and_get_node(void * _tree, int _key, int* size)
   
@@ -137,7 +133,7 @@ module Read = begin
         slotNumber: InstanceNumber
         entity: ColumnMap
         offset: int
-        key: int }
+        key: Value.t option }
 
   type Page = Index array array
 
@@ -188,7 +184,13 @@ module Read = begin
                                                       chunkNumber = chunkNumber
                                                       pageNumber = pageNumber
                                                       slotNumber = slotNumber} ->
-                                             Tree.insert(tree, key, chunkNumber, pageNumber, slotNumber)) tree page) tree chunk) IntPtr.Zero pages
+                                   match key with
+                                   | Some (Value.VInteger32 key) -> Tree.insert(tree, key, chunkNumber, pageNumber, slotNumber)
+                                   | Some (Value.VVariableString key) ->
+                                       // TODO: For now uses the hash. This is incorrect given the set sizes differ. To fix this the C tree needs to support string comparisons
+                                       Tree.insert(tree, key.GetHashCode(), chunkNumber, pageNumber, slotNumber)
+                                   // 0 is the default key to get all via the tree
+                                   | None -> Tree.insert(tree, 0, chunkNumber, pageNumber, slotNumber)) tree page) tree chunk) IntPtr.Zero pages
       { pages = pages; tree = tree; amountAlreadyRead = amountAlreadyRead }
 
   [<Struct>]
@@ -197,11 +199,6 @@ module Read = begin
       { chunkNumber: int
         pageNumber: int
         slotNumber: int }
-      
-  [<Struct>]
-  type CRes =
-      { record: nativeint
-        size: int }
       
   exception ViolationOfConstraint of string
 
@@ -225,37 +222,93 @@ module Read = begin
                     |> fun x -> (x, offset))
       |> Array.map (fun (x, offset) -> Write.Disk.writeFact stream schema relationName offset x)
       
-  let makeArray (value: IntPtr) =
-    [| for i in 0..2 do
-         yield Marshal.PtrToStructure<CRecord>(Marshal.ReadIntPtr(IntPtr.Add (value, i*IntPtr.Size))) |]
+  let private makeArray<'T> (value: IntPtr) size =
+    [| for i in 0..size-1 do
+         yield Marshal.PtrToStructure<'T>(Marshal.ReadIntPtr(IntPtr.Add (value, i*IntPtr.Size))) |]
 
-  let search stream (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
+  let search stream (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option): (Map<string,Value.t> * OffsetNumber option) array option =
       match Map.tryFind entityName schema with
       | Some (Entity.Relation (relationAttributes, _physicalCount)) ->
           let initialPageNumber = 0
           let mutable amountAlreadyRead = 0
           
-          // printfn "Leaves: %A" lastReadChunk.pages
-          // Tree.print_leaves lastReadChunk.tree
-          //match projectionParam, refinement with
-          //| Expression.ProjectionParameter.Restrict attributes, None ->
-          //    None
-          //| Expression.ProjectionParameter.Restrict _, Some (Expression.Operators.Equal (attr, key)) ->
+          match projectionParam, refinement with
+          | Expression.ProjectionParameter.Restrict attributes, None ->
+              let indexBuilder: IndexBuilder =
+                fun offset chunkNumber pageNumber instanceNumber columns ->
+                    { entity = columns
+                      key = None
+                      chunkNumber = chunkNumber
+                      offset = offset
+                      pageNumber = pageNumber
+                      slotNumber = instanceNumber }
+              
+              let mutable size: int = 0
+              let nativeIntSize = NativePtr.toNativeInt<int> &&size
+              let sizePtr: nativeptr<int> = NativePtr.ofNativeInt<int> nativeIntSize
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+              // The 0 searches for all given the lack of refinement
+              // Check the index builder population on the pagination
+              let record = Tree.find_and_get_node(lastReadChunk.tree, 0, sizePtr)
+              let size = NativePtr.read<int> sizePtr
+              let lookups = makeArray<CRecord> record size
+              
+              //NativeLibrary.Free lastReadChunk.tree
+              //NativeLibrary.Free record
+              
+              Some <| Array.map (fun record ->
+                  let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
+                  let projectedAttributes =
+                      (value.entity: Map<string,Value.t>)
+                      |> Map.filter (fun key _ -> List.contains key attributes)
+                  (projectedAttributes, Some value.offset)) lookups
+          | Expression.ProjectionParameter.Restrict attributes, Some (Expression.Operators.Equal (attr, key)) ->
+              let indexBuilder: IndexBuilder =
+                fun offset chunkNumber pageNumber instanceNumber (columns: Map<string, Value.t>) ->
+                    match attr with
+                    | Expression.LocalizedIdentifier (relation, name) when relation = entityName ->
+                        match Map.tryFind name columns with
+                        | Some key ->
+                            { entity = columns
+                              key = Some key
+                              chunkNumber = chunkNumber
+                              offset = offset
+                              pageNumber = pageNumber
+                              slotNumber = instanceNumber }
+                        | None ->
+                            failwith ""
+                    | Expression.LocalizedIdentifier _ ->
+                        failwith "Only allowed to refine over the relation attributes."
+                    | _ -> failwith ""
+              
+              let mutable size: int = 0
+              let nativeIntSize = NativePtr.toNativeInt<int> &&size
+              let sizePtr: nativeptr<int> = NativePtr.ofNativeInt<int> nativeIntSize
+              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+              let record =
+                  match key with
+                  | Expression.Literal (Value.VInteger32 key) ->
+                      Tree.find_and_get_node(lastReadChunk.tree, key, sizePtr)
+                  | Expression.Literal (Value.VVariableString key) ->
+                      Tree.find_and_get_node(lastReadChunk.tree, key.GetHashCode(), sizePtr)
+                  | _ -> failwith ""
+                  
+              let size = NativePtr.read<int> sizePtr
+              let lookups = makeArray<CRecord> record size
+              
+              //NativeLibrary.Free lastReadChunk.tree
+              //NativeLibrary.Free record
+              
+              Some <| Array.map (fun record ->
+                  let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
+                  let projectedAttributes =
+                      (value.entity: Map<string,Value.t>)
+                      |> Map.filter (fun key _ -> List.contains key attributes)
+                  (projectedAttributes, Some value.offset)) lookups
           
-          let mutable size: int = 0
-          let sizePtr: nativeptr<int> = NativePtr.ofNativeInt<int> <| NativePtr.toNativeInt<int> &&size
-          
-          let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
-          amountAlreadyRead <- lastReadChunk.amountAlreadyRead
-          //let mutable ptr = NativePtr.nullPtr<int>
-          let record = Tree.find_and_get_node(lastReadChunk.tree, 1, sizePtr)
-          let size = NativeInterop.NativePtr.read<int> sizePtr
-          let lookups = makeArray record
-          //printfn "SIZE: %A" <| (Marshal.ReadInt32 <| NativePtr.toNativeInt ptr)              
-          Some <| Array.map (fun record ->
-              let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
-              ((value.entity: Map<string,Value.t>), Some value.offset)) lookups
-      // | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
+          // | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
           //     let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
           //     amountAlreadyRead <- lastReadChunk.amountAlreadyRead
           //     lastReadChunk.pages

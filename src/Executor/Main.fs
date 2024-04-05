@@ -67,18 +67,6 @@ module Main =
     *)
     [<EntryPoint>]
     let testPager _ =
-        let indexBuilder: IO.Read.IndexBuilder =
-            fun offset chunkNumber pageNumber instanceNumber columns ->
-                match Map.tryFind "id" columns with
-                | Some (Value.VInteger32 v) ->
-                    { entity = columns
-                      key = v
-                      chunkNumber = chunkNumber
-                      offset = offset
-                      pageNumber = pageNumber
-                      slotNumber = instanceNumber }
-                | _ -> failwith "AAA"
-                
         let logger = 
             match Configuration.Builder.loadConfiguration() with
             | Ok config -> config.Logger
@@ -110,7 +98,7 @@ module Main =
         Runner.execute None true [stream] logger insertRowExpr3 schema
         |> function Insert(updatedSchema,_,_) -> schema <- updatedSchema
         
-        IO.Read.search stream schema "king" (Language.Expression.ProjectionParameter.Restrict ["id"]) None indexBuilder
+        IO.Read.search stream schema "king" (Language.Expression.ProjectionParameter.Restrict ["id"]) None
         |> printfn "RESULT: %A"
         
         System.IO.File.Delete ("/tmp/perplexdb/king.ndf")
