@@ -465,6 +465,9 @@ extern record **find_and_get_node(node *const root, int key, int *size) {
     for (; i < n->num_keys && n->keys[i] == key; i++, counter++) {
       record *temp = n->pointers[i];
       result[counter] = n->pointers[i];
+      //printf("Chunk: %d\n", result[counter]->chunkNumber);
+      //printf("Page: %d\n", result[counter]->pageNumber);
+      //printf("Slot: %d\n", result[counter]->slotNumber);
     }
     n = n->pointers[order - 1];
     i = 0;

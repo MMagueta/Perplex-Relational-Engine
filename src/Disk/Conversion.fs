@@ -125,7 +125,7 @@ module Read = begin
       //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       //extern void* find_and_get_value(void * _tree, int _key, bool _verbose)
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern void* find_and_get_node(void * _tree, int _key, int* size)
+      extern IntPtr find_and_get_node(void * _tree, int _key, int* size)
   
   type ChunkNumber = int
   type PageNumber = int
@@ -192,6 +192,7 @@ module Read = begin
       { pages = pages; tree = tree; amountAlreadyRead = amountAlreadyRead }
 
   [<Struct>]
+  [<StructLayout(LayoutKind.Sequential)>]
   type CRecord =
       { chunkNumber: int
         pageNumber: int
@@ -224,17 +225,9 @@ module Read = begin
                     |> fun x -> (x, offset))
       |> Array.map (fun (x, offset) -> Write.Disk.writeFact stream schema relationName offset x)
       
-  let makeArray<'T>(t, length: int, tSizeInBytes: int) =
-    let mutable result: 'T array = Array.empty
-    
-    let p = NativePtr.add t 0 |> NativePtr.toNativeInt
-    result <- Array.append result ([|Marshal.PtrToStructure<'T> p|])
-    
-    //for i in 0..length-1 do
-    //    let p = NativePtr.add t (i * tSizeInBytes) |> NativePtr.toNativeInt
-    //    result <- Array.append result ([|Marshal.PtrToStructure<'T> p|])
-    //done
-    result
+  let makeArray (value: IntPtr) =
+    [| for i in 0..2 do
+         yield Marshal.PtrToStructure<CRecord>(Marshal.ReadIntPtr(IntPtr.Add (value, i*IntPtr.Size))) |]
 
   let search stream (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
       match Map.tryFind entityName schema with
@@ -250,26 +243,19 @@ module Read = begin
           //| Expression.ProjectionParameter.Restrict _, Some (Expression.Operators.Equal (attr, key)) ->
           
           let mutable size: int = 0
-          let ptr: nativeint = NativePtr.toNativeInt<int> &&size
-          let intPtr: nativeptr<int> = NativePtr.ofNativeInt<int> ptr
+          let sizePtr: nativeptr<int> = NativePtr.ofNativeInt<int> <| NativePtr.toNativeInt<int> &&size
           
           let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
           amountAlreadyRead <- lastReadChunk.amountAlreadyRead
           //let mutable ptr = NativePtr.nullPtr<int>
-          let value = Tree.find_and_get_node(lastReadChunk.tree, 1, intPtr)
-          let asInt: int = NativeInterop.NativePtr.read intPtr
-          printfn "SIZE: %A" asInt
-
-          //let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
-          let crecord = Marshal.PtrToStructure<CRes> value
-          
-          printfn "CRECORD: %A" <| crecord.size
-          let x = makeArray<CRecord>(NativePtr.ofNativeInt<CRecord> crecord.record, asInt, 12)
-          printfn "ARRAY %A" x
+          let record = Tree.find_and_get_node(lastReadChunk.tree, 1, sizePtr)
+          let size = NativeInterop.NativePtr.read<int> sizePtr
+          let lookups = makeArray record
           //printfn "SIZE: %A" <| (Marshal.ReadInt32 <| NativePtr.toNativeInt ptr)              
-          printfn "%A" <| lastReadChunk.pages//.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
-          None
-          // | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
+          Some <| Array.map (fun record ->
+              let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
+              ((value.entity: Map<string,Value.t>), Some value.offset)) lookups
+      // | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
           //     let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
           //     amountAlreadyRead <- lastReadChunk.amountAlreadyRead
           //     lastReadChunk.pages
