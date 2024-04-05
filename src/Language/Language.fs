@@ -124,6 +124,7 @@ module Expression = begin
         | LocalizedIdentifier of Relation: string * Attribute: string
         | LockRead of t
         | LockWrite of t
+        | Literal of Value.t
     and UpdateFieldInfo =
         { FieldName: string
           FieldType: Type.t

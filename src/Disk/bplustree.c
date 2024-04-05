@@ -177,12 +177,12 @@ void print_tree(node *const root);
 void find_and_print(node *const root, int key, bool verbose);
 void find_and_print_range(node *const root, int range1, int range2,
                           bool verbose);
-record **find_and_get_node(node *const root, int key);
+record **find_and_get_node(node *const root, int key, int *size);
 int find_range(node *const root, int key_start, int key_end, bool verbose,
                int returned_keys[], void *returned_pointers[]);
 node *find_leaf(node *const root, int key, bool verbose);
 record *find(node *root, int key, bool verbose, node **leaf_out);
-head *find_node(node *root, int key, node **leaf_out);
+head *find_node(node *root, int key);
 int cut(int length);
 
 // Insertion.
@@ -437,15 +437,41 @@ extern /*int*/ record *find_and_get_value(node *const root, int key,
   /* else return r->value; */
 }
 
-extern record **find_and_get_node(node *const root, int key) {
-  head *head = find_node(root, key, NULL);
-  int count_duplicates;
-  for(count_duplicates = head->position; head->initial_node->keys[count_duplicates] == key; count_duplicates++);
-  record** result = malloc(sizeof(record*)*(count_duplicates - head->position));
-  for(count_duplicates = head->position; head->initial_node->keys[count_duplicates] == key; count_duplicates++){
-	result[count_duplicates - head->position] = head->initial_node->pointers[count_duplicates];
+extern record **find_and_get_node(node *const root, int key, int *size) {
+
+  head *head = find_node(root, key);
+  if (head == NULL) {
+    *size = 0;
+    return NULL;
   }
+  
+  node *n = head->initial_node;
+  int counter = 0, i = head->position;
+  
+  // Save how much we gotta allocate. TODO: We should use realloc to not use this at all
+  while (n != NULL) {
+    for (; i < n->num_keys && n->keys[i] == key; i++, counter++);
+    n = n->pointers[order - 1];
+    i = 0;
+  }
+  
+  *size = counter;
+  record** result = malloc(sizeof(record*)*(*size));
+
+  counter = 0; i = head->position; n = head->initial_node;
+  
+  // Saving values into the output array of pointers
+  while (n != NULL) {
+    for (; i < n->num_keys && n->keys[i] == key; i++, counter++) {
+      record *temp = n->pointers[i];
+      result[counter] = n->pointers[i];
+    }
+    n = n->pointers[order - 1];
+    i = 0;
+  }
+  
   return result;
+  
 }
 
 /* Finds and prints the keys, pointers, and values within a range
@@ -522,7 +548,7 @@ extern node *find_leaf(node *const root, int key, bool verbose) {
     }
     i = 0;
     while (i < c->num_keys) {
-      if (key >= c->keys[i])
+      if (key > c->keys[i])
         i++;
       else
         break;
@@ -574,11 +600,8 @@ record *find(node *root, int key, bool verbose, node **leaf_out) {
     return (record *)leaf->pointers[i];
 }
 
-head *find_node(node *root, int key, node **leaf_out) {
+head *find_node(node *root, int key) {
   if (root == NULL) {
-    if (leaf_out != NULL) {
-      *leaf_out = NULL;
-    }
     return NULL;
   }
 
@@ -587,24 +610,16 @@ head *find_node(node *root, int key, node **leaf_out) {
 
   leaf = find_leaf(root, key, false);
 
-  /* If root != NULL, leaf must have a value, even
-   * if it does not contain the desired key.
-   * (The leaf holds the range of keys that would
-   * include the desired key.)
-   */
-
   for (i = 0; i < leaf->num_keys; i++)
     if (leaf->keys[i] == key)
       break;
-  if (leaf_out != NULL) {
-    *leaf_out = leaf;
-  }
-  if (i == leaf->num_keys)
+
+  if (i == leaf->num_keys) {
     return NULL;
-  else {
-	head* result = malloc(sizeof(head));
-	result->initial_node = leaf;
-	result->position = i;
+  } else {
+    head* result = malloc(sizeof(head));
+    result->initial_node = leaf;
+    result->position = i;
     return result;
   }
 }
@@ -963,26 +978,6 @@ extern node *insert(node *root, int key, int chunkNumber, int pageNumber,
   record *record_pointer = NULL;
   node *leaf = NULL;
 
-  /* The current implementation ignores
-   * duplicates.
-   */
-
-  record_pointer = find(root, key, false, NULL);
-  if (record_pointer != NULL) {
-
-    /* If the key already exists in this tree, update
-     * the value and return the tree.
-     */
-
-    record_pointer->chunkNumber = chunkNumber;
-    record_pointer->pageNumber = pageNumber;
-    record_pointer->slotNumber = slotNumber;
-    return root;
-  }
-
-  /* Create a new record for the
-   * value.
-   */
   record_pointer = make_record(chunkNumber, pageNumber, slotNumber);
 
   /* Case: the tree does not exist yet.

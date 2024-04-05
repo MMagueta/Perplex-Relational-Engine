@@ -1,5 +1,8 @@
 ﻿namespace IO
 
+open System
+open Microsoft.FSharp.NativeInterop
+
 module Utilities = begin
   [<RequireQualifiedAccess>]
   module String = begin
@@ -113,16 +116,16 @@ module Read = begin
 
   [<RequireQualifiedAccessAttribute>]
   module Tree =
-      [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern void print_leaves(void* _tree);
+      //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+      //extern void print_leaves(void* _tree);
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       extern void* insert(void* _tree, int _key, int _chunkNumber, int _pageNumber, int _slotNumber)
+      //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+      //extern void find_and_print(void * _tree, int _key, bool _verbose)
+      //[<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+      //extern void* find_and_get_value(void * _tree, int _key, bool _verbose)
       [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern void find_and_print(void * _tree, int _key, bool _verbose)
-      [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern void* find_and_get_value(void * _tree, int _key, bool _verbose)
-      [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern void* find_and_get_node(void * _tree, int _key)
+      extern void* find_and_get_node(void * _tree, int _key, int* size)
   
   type ChunkNumber = int
   type PageNumber = int
@@ -194,6 +197,11 @@ module Read = begin
         pageNumber: int
         slotNumber: int }
       
+  [<Struct>]
+  type CRes =
+      { record: nativeint
+        size: int }
+      
   exception ViolationOfConstraint of string
 
   let update stream (schema: Schema.t) relationName (attributeToUpdate: string) (projection: (Map<string, Value.t>*OffsetNumber option) array) (valueReplace: int32) (constraint: (Expression.Operators*Expression.t list) option) =
@@ -215,70 +223,92 @@ module Read = begin
                         x
                     |> fun x -> (x, offset))
       |> Array.map (fun (x, offset) -> Write.Disk.writeFact stream schema relationName offset x)
+      
+  let makeArray<'T>(t, length: int, tSizeInBytes: int) =
+    let mutable result: 'T array = Array.empty
+    
+    let p = NativePtr.add t 0 |> NativePtr.toNativeInt
+    result <- Array.append result ([|Marshal.PtrToStructure<'T> p|])
+    
+    //for i in 0..length-1 do
+    //    let p = NativePtr.add t (i * tSizeInBytes) |> NativePtr.toNativeInt
+    //    result <- Array.append result ([|Marshal.PtrToStructure<'T> p|])
+    //done
+    result
 
   let search stream (schema: Schema.t) (entityName: string) (projectionParam: Expression.ProjectionParameter) (refinement: Expression.Operators option) (indexBuilder: IndexBuilder) =
       match Map.tryFind entityName schema with
       | Some (Entity.Relation (relationAttributes, _physicalCount)) ->
-          
           let initialPageNumber = 0
           let mutable amountAlreadyRead = 0
           
           // printfn "Leaves: %A" lastReadChunk.pages
           // Tree.print_leaves lastReadChunk.tree
+          //match projectionParam, refinement with
+          //| Expression.ProjectionParameter.Restrict attributes, None ->
+          //    None
+          //| Expression.ProjectionParameter.Restrict _, Some (Expression.Operators.Equal (attr, key)) ->
           
+          let mutable size: int = 0
+          let ptr: nativeint = NativePtr.toNativeInt<int> &&size
+          let intPtr: nativeptr<int> = NativePtr.ofNativeInt<int> ptr
+          
+          let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+          amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+          //let mutable ptr = NativePtr.nullPtr<int>
+          let value = Tree.find_and_get_node(lastReadChunk.tree, 1, intPtr)
+          let asInt: int = NativeInterop.NativePtr.read intPtr
+          printfn "SIZE: %A" asInt
 
-          match projectionParam, refinement with
-          | Expression.ProjectionParameter.Restrict attributes, None ->
-              None
-          | Expression.ProjectionParameter.Restrict _, Some (Expression.Operators.Equal (attr, key)) ->
-              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
-              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
-              let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
-              let crecord =
-                  Marshal.PtrToStructure<CRecord> value
-              printfn "%A" <| crecord              
-              printfn "%A" <| lastReadChunk.pages.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
-              None
-          | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
-              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
-              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
-              lastReadChunk.pages
-              |> Array.concat
-              |> Array.concat
-              |> Array.choose (function
-                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    let value = entity.[attr]
-                                    Some (value, offset)
-                                | _ -> None)
-              |> Array.sumBy (fun (Value.VInteger32 x, _) -> x)
-              |> fun x -> ([|(Map.empty |> Map.add "SUM" (Value.VInteger32 x), None)|])
-              |> Some
-          | Expression.ProjectionParameter.All, Some (Expression.Operators.Equal (_, key)) ->
-              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
-              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
-              lastReadChunk.pages
-              |> Array.concat
-              |> Array.concat
-              |> Array.choose (function
-                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    //Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
-                                    Some (entity, Some offset)
-                                | _ -> None)
-              |> Some
-              
-          | Expression.ProjectionParameter.Taking(limit, attributes), Some (Expression.Operators.Equal (_, key)) ->
-              let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
-              amountAlreadyRead <- lastReadChunk.amountAlreadyRead
-              lastReadChunk.pages
-              |> Array.concat
-              |> Array.concat
-              |> Array.choose (function
-                                | {entity = entity; key = key_val; offset = offset} when key_val = key ->
-                                    Some (Map.filter (fun k _ -> List.contains k attributes) entity, Some offset)
-                                | _ -> None)
-              |> fun elems -> if elems.Length < limit then Array.take elems.Length elems else Array.take limit elems
-              |> Some
-          | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
+          //let value = Tree.find_and_get_value (lastReadChunk.tree, key, false)
+          let crecord = Marshal.PtrToStructure<CRes> value
+          
+          printfn "CRECORD: %A" <| crecord.size
+          let x = makeArray<CRecord>(NativePtr.ofNativeInt<CRecord> crecord.record, asInt, 12)
+          printfn "ARRAY %A" x
+          //printfn "SIZE: %A" <| (Marshal.ReadInt32 <| NativePtr.toNativeInt ptr)              
+          printfn "%A" <| lastReadChunk.pages//.[crecord.chunkNumber].[crecord.pageNumber].[crecord.slotNumber]
+          None
+          // | Expression.ProjectionParameter.Sum attr, Some (Expression.Operators.Equal (_, key)) ->
+          //     let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+          //     amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+          //     lastReadChunk.pages
+          //     |> Array.concat
+          //     |> Array.concat
+          //     |> Array.choose (function
+          //                       | {entity = entity; key = key_val; offset = offset} when key_val = 1 -> //key ->
+          //                           let value = entity.[attr]
+          //                           Some (value, offset)
+          //                       | _ -> None)
+          //     |> Array.sumBy (fun (Value.VInteger32 x, _) -> x)
+          //     |> fun x -> ([|(Map.empty |> Map.add "SUM" (Value.VInteger32 x), None)|])
+          //     |> Some
+          // | Expression.ProjectionParameter.All, Some (Expression.Operators.Equal (_, key)) ->
+          //     let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+          //     amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+          //     lastReadChunk.pages
+          //     |> Array.concat
+          //     |> Array.concat
+          //     |> Array.choose (function
+          //                       | {entity = entity; key = key_val; offset = offset} when key_val = 1 -> //key ->
+          //                           //Some (entity |> Map.map (fun _ v -> v.Serialize()), Some offset)
+          //                           Some (entity, Some offset)
+          //                       | _ -> None)
+          //     |> Some
+          //     
+          // | Expression.ProjectionParameter.Taking(limit, attributes), Some (Expression.Operators.Equal (_, key)) ->
+          //     let lastReadChunk = buildPagination stream schema entityName relationAttributes indexBuilder initialPageNumber amountAlreadyRead
+          //     amountAlreadyRead <- lastReadChunk.amountAlreadyRead
+          //     lastReadChunk.pages
+          //     |> Array.concat
+          //     |> Array.concat
+          //     |> Array.choose (function
+          //                       | {entity = entity; key = key_val; offset = offset} when key_val = 1 -> //key ->
+          //                           Some (Map.filter (fun k _ -> List.contains k attributes) entity, Some offset)
+          //                       | _ -> None)
+          //     |> fun elems -> if elems.Length < limit then Array.take elems.Length elems else Array.take limit elems
+          //     |> Some
+          // | otherwise -> failwithf "NOT EXPECTING: %A" otherwise
           
       | None -> failwithf "Entity '%s' could not be located in the working schema." entityName
 

@@ -217,7 +217,7 @@ module Runner =
                     stream.Dispose()
                     Update
                 | Error _ -> failwithf "Failed to acquire lock for updating relation '%s'" relationName
-
+        (*
         | Expression.Minus(left, right) ->
             match carry with
             | Some (map, relationName) when not <| Map.isEmpty map ->
@@ -259,7 +259,7 @@ module Runner =
                     // For handling sum now, gotta fix the parser
                     Minus (leftVal + rightVal)
                 | _ -> failwith ""
-
+        *)
         (*
         | Expression.Plus(left, right) ->
             let leftEval = execute stream logger left schema
