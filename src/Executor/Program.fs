@@ -152,31 +152,20 @@ module Runner =
             
         | Expression.Project(relationName, attributesToProject, refinement) when (Map.tryFind relationName schema).IsSome ->
             // let search = IO.Read.search schema relationName (Language.Expression.ProjectionParameter.Restrict attributesToProject) ("Age", 23)
-            let indexBuilder: IO.Read.IndexBuilder =
-                fun offset chunkNumber pageNumber instanceNumber columns ->
-                    match Map.tryFind "AccountNumber" columns with
-                    | Some (Value.VInteger32 v) ->
-                        { entity = columns
-                          key = v
-                          chunkNumber = chunkNumber
-                          offset = offset
-                          pageNumber = pageNumber
-                          slotNumber = instanceNumber }
-                    | _ -> failwith "AAA"
             // let stream =
                 // stream
                 // |> Option.map Ok
                 // |> Option.defaultValue (IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100)
             match List.tryFind (fun (stream: FileStream) -> stream.Name.Contains relationName) streams with
             | Some stream ->
-                let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
+                let search = IO.Read.search stream schema relationName attributesToProject refinement
                 match search with
                 | Some result ->
                     Projection (result, schema, relationName)
                 | None -> Projection ([||], schema, relationName)
             | None ->
                 let stream = match IO.Write.Disk.lockedStream ("/tmp/perplexdb/" + relationName + ".ndf") 100 with Ok stream -> stream | Error _ -> failwith "Failed to acquire lock for reading."
-                let search = IO.Read.search stream schema relationName attributesToProject refinement indexBuilder
+                let search = IO.Read.search stream schema relationName attributesToProject refinement
                 match search with
                 | Some result ->
                     stream.Dispose()
@@ -217,7 +206,7 @@ module Runner =
                     stream.Dispose()
                     Update
                 | Error _ -> failwithf "Failed to acquire lock for updating relation '%s'" relationName
-
+        (*
         | Expression.Minus(left, right) ->
             match carry with
             | Some (map, relationName) when not <| Map.isEmpty map ->
@@ -259,7 +248,7 @@ module Runner =
                     // For handling sum now, gotta fix the parser
                     Minus (leftVal + rightVal)
                 | _ -> failwith ""
-
+        *)
         (*
         | Expression.Plus(left, right) ->
             let leftEval = execute stream logger left schema

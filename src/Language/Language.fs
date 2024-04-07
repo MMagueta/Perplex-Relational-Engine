@@ -95,10 +95,12 @@ module Expression = begin
         | Taking of Limit: int * Attributes: (string list)
 
     type Operators =
-        | Equal of string * int
+        | Equal of t * t
         | FEqual
-        | Gte of string * int
+        | Gte of t * t
         | FGte
+        | Plus of t * t
+        | Minus of t * t
         member this.GetFunction (value: Value.t) =
             match this, value with
             | FGte, Value.VInteger32 i -> ((>=) i)
@@ -109,10 +111,11 @@ module Expression = begin
             | FGte -> "greater than or equal"
             | FEqual -> "equal"
 
-    type t =
+    and t =
         | Begin of string list * (t list)
-        | Plus of t * t
-        | Minus of t * t
+        // | Plus of t * t
+        // | Minus of t * t
+        | Operation of Operators
         | Insert of RelationName: string * Fields: InsertFieldInfo array
         | CreateRelation of Name: string * Attributes: Map<string, Type.t>
         | CreateConstraint of Name: string
@@ -121,6 +124,7 @@ module Expression = begin
         | LocalizedIdentifier of Relation: string * Attribute: string
         | LockRead of t
         | LockWrite of t
+        | Literal of Value.t
     and UpdateFieldInfo =
         { FieldName: string
           FieldType: Type.t

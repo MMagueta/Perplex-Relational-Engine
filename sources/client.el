@@ -35,6 +35,10 @@
         UPDATE Account SET AccountNumber (PROJECT SUM(Value INTEGER) Credit SELECT AccountNumber = 1 - PROJECT SUM(Value INTEGER) Debit SELECT AccountNumber = 1) SELECT AccountNumber = 1
         END")
 
+(setq default-search "LOCK READ PROJECT (AccountNumber INTEGER Balance INTEGER) Account") ; SELECT Account@AccountNumber = 1")
+
+(perplex-client default-search)
+
 (perplex-client transact)
 
 (perplex-client account-create-relation)

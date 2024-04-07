@@ -1,11 +1,13 @@
 namespace Executor
 
+open System.IO
+
 module Main =
     open Language
     open Runner
                 
     let schema = Schema.loadFromDisk()
-        
+    (*
     let testEffects _ =
         let logger = 
             match Configuration.Builder.loadConfiguration() with
@@ -62,20 +64,43 @@ module Main =
             | _ -> ()
 
         0
-
+    *)
     [<EntryPoint>]
     let testPager _ =
-        let indexBuilder: IO.Read.IndexBuilder =
-            fun chunkNumber pageNumber instanceNumber columns ->
-                match Map.tryFind "Age" columns with
-                | Some (Value.VInteger32 v) ->
-                    { entity = columns
-                      key = v
-                      chunkNumber = chunkNumber
-                      pageNumber = pageNumber
-                      slotNumber = instanceNumber }
-                | _ -> failwith ""
-
-        IO.Read.search schema "Person" (Language.Expression.ProjectionParameter.Restrict ["Name"]) (Some 25) indexBuilder
-        |> printfn "%A"
+        let logger = 
+            match Configuration.Builder.loadConfiguration() with
+            | Ok config -> config.Logger
+            | Error err -> failwith err
+        
+        use stream = new System.IO.FileStream ("/tmp/perplexdb/king.ndf", FileMode.OpenOrCreate, FileAccess.ReadWrite)
+        
+        let createRelationExpr =
+            Expression.CreateRelation ("king", Map.empty |> Map.add "name" (Type.TVariableString 20) |> Map.add "id" Type.TInteger32)
+            
+        let insertRowExpr1 =
+            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Type.TVariableString 20); FieldValue = Value.VVariableString "Gaiseric"}
+                                          {FieldName = "id"; FieldType = Type.TInteger32; FieldValue = Value.VInteger32 1} |])
+            
+        let insertRowExpr2 =
+            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Type.TVariableString 20); FieldValue = Value.VVariableString "Huneric"}
+                                          {FieldName = "id"; FieldType = Type.TInteger32; FieldValue = Value.VInteger32 1} |])
+            
+        let insertRowExpr3 =
+            Expression.Insert ("king", [| {FieldName = "name"; FieldType = (Type.TVariableString 20); FieldValue = Value.VVariableString "Alberic"}
+                                          {FieldName = "id"; FieldType = Type.TInteger32; FieldValue = Value.VInteger32 1} |])
+        let mutable schema = schema
+        Runner.execute None true [stream] logger createRelationExpr schema
+        |> function Effect("CREATED RELATION", updatedSchema) -> schema <- updatedSchema
+        Runner.execute None true [stream] logger insertRowExpr1 schema
+        |> function Insert(updatedSchema,_,_) -> schema <- updatedSchema
+        Runner.execute None true [stream] logger insertRowExpr2 schema
+        |> function Insert(updatedSchema,_,_) -> schema <- updatedSchema
+        Runner.execute None true [stream] logger insertRowExpr3 schema
+        |> function Insert(updatedSchema,_,_) -> schema <- updatedSchema
+        
+        IO.Read.search stream schema "king" (Language.Expression.ProjectionParameter.Restrict ["id"]) None
+        |> printfn "RESULT: %A"
+        
+        System.IO.File.Delete ("/tmp/perplexdb/king.ndf")
+        System.IO.File.Delete ("/tmp/perplexdb/schema.xml")
         0

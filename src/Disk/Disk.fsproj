@@ -8,12 +8,13 @@
   <!-- </Target> -->
   <ItemGroup>
     <Compile Include="Conversion.fs" />
+    <ClCompile Include="bplustree.c" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Language\Language.fsproj" />
     <ProjectReference Include="..\Configuration\Configuration.fsproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="8.0.100" />
+    <PackageReference Update="FSharp.Core" Version="8.0.300-beta.24154.4" />
   </ItemGroup>
 </Project>
