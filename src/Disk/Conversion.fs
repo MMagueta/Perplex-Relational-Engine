@@ -56,7 +56,7 @@ module Write = begin
             let mutable stream: System.IO.FileStream = null
             try stream <- new System.IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.ReadWrite, IO.FileShare.Inheritable); Ok stream
             with :? IOException ->
-                if isNull stream then Async.Sleep 10 |> Async.RunSynchronously; lockedStream path (attempts - 1)
+                if isNull stream then System.Threading.Thread.Sleep 100; lockedStream path (attempts - 1)
                 else Error ""
          else Error ""
 
@@ -70,7 +70,7 @@ module Write = begin
             // Stuck with FileShare because of Lock being not available for mac
             // Replace this later with regional locking instead, right now locks the whole file
             // use stream = new IO.FileStream(path, IO.FileMode.OpenOrCreate, IO.FileAccess.Write, IO.FileShare.Read) in
-            let binaryStream = IO.BinaryWriter(stream) in
+            let binaryStream = new IO.BinaryWriter(stream) in
             // logger.ForContext("ExecutionContext", "Write").Debug($"Position: {position}")
             let offset =
                 match position with
@@ -118,10 +118,12 @@ module Read = begin
 
   [<RequireQualifiedAccessAttribute>]
   module Tree =
-      [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+      [<DllImport(@"C:\Users\mague\source\repos\PerplexRelationalEngine\x64\Debug\Tree.dll", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
       extern void* insert(void* _tree, int _key, int _chunkNumber, int _pageNumber, int _slotNumber)
-      [<DllImport(__SOURCE_DIRECTORY__ + "/libbplustree.so", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
-      extern IntPtr find_and_get_node(void * _tree, int _key, int* size)
+      [<DllImport(@"C:\Users\mague\source\repos\PerplexRelationalEngine\x64\Debug\Tree.dll", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+      extern IntPtr find_and_get_node(void * _tree, int _key, int* _size)
+      [<DllImport(@"C:\Users\mague\source\repos\PerplexRelationalEngine\x64\Debug\Tree.dll", CallingConvention = CallingConvention.StdCall, ExactSpelling = true)>]
+      extern void destroy_tree(void* _tree)
   
   type ChunkNumber = int
   type PageNumber = int
@@ -254,9 +256,8 @@ module Read = begin
               let size = NativePtr.read<int> sizePtr
               let lookups = makeArray<CRecord> record size
               
-              //NativeLibrary.Free lastReadChunk.tree
-              //NativeLibrary.Free record
-              
+              Tree.destroy_tree(lastReadChunk.tree)
+
               Some <| Array.map (fun record ->
                   let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
                   let projectedAttributes =
@@ -297,10 +298,9 @@ module Read = begin
                   
               let size = NativePtr.read<int> sizePtr
               let lookups = makeArray<CRecord> record size
-              
-              //NativeLibrary.Free lastReadChunk.tree
-              //NativeLibrary.Free record
-              
+
+              Tree.destroy_tree(lastReadChunk.tree)
+
               Some <| Array.map (fun record ->
                   let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
                   let projectedAttributes =
