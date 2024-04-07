@@ -9,3 +9,6 @@
 **/Parser.fs
 **/Parser.fsi
 **/Lexer.fs
+/.vs
+/Tree/x64/Debug
+/x64/Debug
