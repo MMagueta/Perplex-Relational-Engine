@@ -255,6 +255,7 @@ module Read = begin
               let record = Tree.find_and_get_node(lastReadChunk.tree, 0, sizePtr)
               let size = NativePtr.read<int> sizePtr
               let lookups = makeArray<CRecord> record size
+              
               Tree.destroy_tree(lastReadChunk.tree)
 
               Some <| Array.map (fun record ->
@@ -297,6 +298,9 @@ module Read = begin
                   
               let size = NativePtr.read<int> sizePtr
               let lookups = makeArray<CRecord> record size
+
+              Tree.destroy_tree(lastReadChunk.tree)
+
               Some <| Array.map (fun record ->
                   let value = lastReadChunk.pages.[record.chunkNumber].[record.pageNumber].[record.slotNumber]
                   let projectedAttributes =
