@@ -65,6 +65,7 @@ module Main =
 
         0
     *)
+
     [<EntryPoint>]
     let testPager _ =
         let logger = 
@@ -100,7 +101,14 @@ module Main =
         
         IO.Read.search stream schema "king" (Language.Expression.ProjectionParameter.Restrict ["id"]) None
         |> printfn "RESULT: %A"
-        
+
         System.IO.File.Delete ("/tmp/perplexdb/king.ndf")
         System.IO.File.Delete ("/tmp/perplexdb/schema.xml")
         0
+
+    (*
+    [<EntryPoint>]
+    let testDll _ =
+        IO.Read.Tree.print_something()
+        0
+    *)

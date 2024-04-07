@@ -8,7 +8,6 @@
   <!-- </Target> -->
   <ItemGroup>
     <Compile Include="Conversion.fs" />
-    <ClCompile Include="bplustree.c" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Language\Language.fsproj" />
